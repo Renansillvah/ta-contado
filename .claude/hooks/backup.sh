@@ -9,7 +9,7 @@ CONFIG_FILE="/workspace/.lasy/config.json"
 # Verificar se arquivo de config existe
 if [ ! -f "$CONFIG_FILE" ]; then
   echo "[backup-hook] Config file not found: $CONFIG_FILE" >&2
-  exit 0  # Exit 0 para nao bloquear Claude - backup sera feito pelo SaveAlarmManager
+  exit 0
 fi
 
 # Verificar se jq esta disponivel
@@ -44,7 +44,7 @@ RESPONSE=$(curl -s -X POST "${BACKUP_URL}/sandbox/backup-hook" \
   -d "{\"projectId\": \"$PROJECT_ID\", \"sessionId\": \"$SESSION_ID\"}" \
   --max-time 120 2>&1) || {
     echo "[backup-hook] curl failed: $RESPONSE" >&2
-    exit 0  # Nao bloquear - SaveAlarmManager fara backup
+    exit 0
   }
 
 # Verificar sucesso
@@ -57,6 +57,5 @@ if [ "$SUCCESS" = "true" ]; then
 else
   ERROR=$(echo "$RESPONSE" | jq -r '.error // "Unknown error"' 2>/dev/null || echo "$RESPONSE")
   echo "[backup-hook] Backup failed: $ERROR" >&2
-  # Exit 0 para nao bloquear Claude - SaveAlarmManager fara backup como fallback
   exit 0
 fi
