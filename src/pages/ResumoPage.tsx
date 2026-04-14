@@ -1,12 +1,9 @@
 import { useMemo } from 'react'
 import { useApp } from '@/context/AppContext'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns'
+import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Skeleton } from '@/components/ui/skeleton'
-
-const MES_ATUAL = format(new Date(), 'yyyy-MM')
-const MES_LABEL = format(new Date(), 'MMM. yy', { locale: ptBR }).toUpperCase()
 
 function formatBRL(v: number) {
   return `R$ ${v.toFixed(2).replace('.', ',')}`
@@ -14,6 +11,9 @@ function formatBRL(v: number) {
 
 export default function ResumoPage() {
   const { gastos, receitas, dividas, totalGastos, totalReceitas, totalDividas, loading } = useApp()
+  // Calculado dentro do componente para refletir o mês correto sempre
+  const MES_ATUAL = format(new Date(), 'yyyy-MM')
+  const MES_LABEL = format(new Date(), 'MMM. yy', { locale: ptBR }).toUpperCase()
 
   const receitasMes = useMemo(() =>
     receitas.filter(r => r.data.startsWith(MES_ATUAL) && r.tipo === 'recebido')
@@ -55,9 +55,6 @@ export default function ResumoPage() {
       valor,
     }))
   }, [gastos])
-
-  const saldo = totalReceitas - totalGastos
-  const saldoPositivo = saldo >= 0
 
   return (
     <div className="overflow-y-auto h-full p-3 space-y-3">

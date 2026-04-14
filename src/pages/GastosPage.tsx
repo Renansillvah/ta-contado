@@ -1,18 +1,18 @@
 import { useState } from 'react'
-import { Plus, Trash2, ShoppingCart, Utensils, Car, Home, Zap, Heart, MoreHorizontal } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const CATEGORIAS = [
-  { label: 'Alimentação', emoji: '🍔', icon: Utensils },
-  { label: 'Transporte', emoji: '🚗', icon: Car },
-  { label: 'Moradia', emoji: '🏠', icon: Home },
-  { label: 'Saúde', emoji: '❤️', icon: Heart },
-  { label: 'Lazer', emoji: '🎮', icon: Zap },
-  { label: 'Compras', emoji: '🛒', icon: ShoppingCart },
-  { label: 'Outros', emoji: '📌', icon: MoreHorizontal },
+  { label: 'Alimentação', emoji: '🍔' },
+  { label: 'Transporte', emoji: '🚗' },
+  { label: 'Moradia', emoji: '🏠' },
+  { label: 'Saúde', emoji: '❤️' },
+  { label: 'Lazer', emoji: '🎮' },
+  { label: 'Compras', emoji: '🛒' },
+  { label: 'Outros', emoji: '📌' },
 ]
 
 interface FormGasto {
@@ -36,15 +36,18 @@ export default function GastosPage() {
   const salvar = async () => {
     if (!form.descricao || !form.valor) return
     setSalvando(true)
-    await adicionarGasto({
-      descricao: form.descricao,
-      valor: parseFloat(form.valor.replace(',', '.')),
-      categoria: form.categoria,
-      data: form.data,
-    })
-    setForm({ descricao: '', valor: '', categoria: 'Alimentação', data: new Date().toISOString().split('T')[0] })
-    setShowForm(false)
-    setSalvando(false)
+    try {
+      await adicionarGasto({
+        descricao: form.descricao,
+        valor: parseFloat(form.valor.replace(',', '.')),
+        categoria: form.categoria,
+        data: form.data,
+      })
+      setForm({ descricao: '', valor: '', categoria: 'Alimentação', data: new Date().toISOString().split('T')[0] })
+      setShowForm(false)
+    } finally {
+      setSalvando(false)
+    }
   }
 
   const catEmoji = (cat: string) => CATEGORIAS.find(c => c.label === cat)?.emoji || '📌'
