@@ -18,14 +18,23 @@ const MSG_INICIAL: Mensagem = {
   timestamp: new Date(),
 }
 
+// Regex para detectar receitas (verificado antes dos gastos)
+const REGEX_RECEITA = /(?:recebi|ganhei|entrou|freela|salário|pagamento|venda)\s*(?:de\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
+
+// Regex para detectar dívidas
+const REGEX_DIVIDA = /(?:devo|tenho\s+(?:uma\s+)?dívida|cartão|financiamento|empréstimo)\s*(?:de\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
+
+// Regex para detectar gastos com palavras-chave explícitas
+const REGEX_GASTO_KEYWORDS = /(?:gastei|paguei|comprei|almoço|jantar|café|gasolina|uber|ifood|mercado|farmácia|luz|água|internet)\s*[a-zA-Zçã]*\s*(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
+
+// Regex genérico "descricao + valor" como fallback de gasto
+const REGEX_GASTO_GENERICO = /^(.+?)\s+(\d+(?:[.,]\d{1,2})?)(?:\s+reais?)?$/i
+
 function parseComando(
   texto: string,
   adicionarGasto: (g: any) => Promise<void>,
   adicionarReceita: (r: any) => Promise<void>,
   adicionarDivida: (d: any) => Promise<void>,
-  gastos: any[],
-  receitas: any[],
-  dividas: any[],
   totalGastos: number,
   totalReceitas: number,
   totalDividas: number
@@ -33,52 +42,48 @@ function parseComando(
   const t = texto.toLowerCase().trim()
   const hoje = new Date().toISOString().split('T')[0]
 
-  // Detectar gasto
-  const regexGasto = /(?:gastei|paguei|comprei|almoço|jantar|café|gasolina|uber|ifood|mercado|farmácia|luz|água|internet|aluguel)\s*[a-zA-Zçã]*\s*(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
-  const matchGasto = t.match(regexGasto)
-
-  // Detectar valor com palavras-chave de gasto
-  const regexGastoSimples = /^(?:(.+?)\s+(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)|(r\$\s*)?(\d+(?:[.,]\d{1,2})?)\s+(?:de|no|na|em)\s+(.+))$/i
-
-  // Detectar "X reais" ou "R$X" como gasto genérico
-  const regexValorGasto = /(.+?)\s+(\d+(?:[.,]\d{1,2})?)\s*(?:reais?|r\$)?$/i
-  const regexValorGasto2 = /(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)\s+(?:de|no|na|em)\s+(.+)/i
-
-  // Receita
-  const regexReceita = /(?:recebi|ganhei|entrou|freela|salário|pagamento|venda|aluguel)\s*(?:de\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
-  const matchReceita = t.match(regexReceita)
-
-  // Dívida
-  const regexDivida = /(?:devo|tenho\s+(?:uma\s+)?dívida|cartão|financiamento|empréstimo)\s*(?:de\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
-  const matchDivida = t.match(regexDivida)
-
-  // Resumo/Consulta
+  // 1. Resumo/Consulta — prioridade máxima
   if (t.includes('resumo') || t.includes('como foi') || t.includes('saldo') || t.includes('total') || t.includes('quanto')) {
     const saldo = totalReceitas - totalGastos
     return `📊 **Seu resumo atual:**\n\n💸 Total de gastos: R$ ${totalGastos.toFixed(2).replace('.', ',')}\n💰 Total de receitas: R$ ${totalReceitas.toFixed(2).replace('.', ',')}\n💳 Dívidas restantes: R$ ${totalDividas.toFixed(2).replace('.', ',')}\n\n💡 Saldo: R$ ${saldo.toFixed(2).replace('.', ',')}`
   }
 
+  // 2. Receita — checar antes dos gastos (evita "aluguel recebido" virar gasto)
+  const matchReceita = t.match(REGEX_RECEITA)
   if (matchReceita) {
     const valor = parseFloat(matchReceita[1].replace(',', '.'))
-    const descricao = texto.trim()
-    adicionarReceita({ descricao, categoria: 'Outros', valor, tipo: 'recebido', data: hoje })
-    return `✅ Receita de R$ ${valor.toFixed(2).replace('.', ',')} registrada! 💰`
+    if (valor > 0) {
+      adicionarReceita({ descricao: texto.trim(), categoria: 'Outros', valor, tipo: 'recebido', data: hoje })
+      return `✅ Receita de R$ ${valor.toFixed(2).replace('.', ',')} registrada! 💰`
+    }
   }
 
+  // 3. Dívida
+  const matchDivida = t.match(REGEX_DIVIDA)
   if (matchDivida) {
     const valor = parseFloat(matchDivida[1].replace(',', '.'))
-    const nome = texto.trim()
-    adicionarDivida({ nome, tipo: 'outros', valor_total: valor, valor_pago: 0, parcelado: false })
-    return `✅ Dívida de R$ ${valor.toFixed(2).replace('.', ',')} registrada! 💳`
+    if (valor > 0) {
+      adicionarDivida({ nome: texto.trim(), tipo: 'outros', valor_total: valor, valor_pago: 0, parcelado: false })
+      return `✅ Dívida de R$ ${valor.toFixed(2).replace('.', ',')} registrada! 💳`
+    }
   }
 
-  // Tentar detectar gasto com valor no texto
-  const matchSimples = t.match(/^(.+?)\s+(\d+(?:[.,]\d{1,2})?)(?:\s+reais?)?$/i)
-  if (matchSimples && !matchReceita && !matchDivida) {
-    const valor = parseFloat(matchSimples[2].replace(',', '.'))
-    const descricao = texto.trim()
+  // 4. Gasto com palavra-chave explícita (almoço, gasolina, etc)
+  const matchGastoKw = t.match(REGEX_GASTO_KEYWORDS)
+  if (matchGastoKw) {
+    const valor = parseFloat(matchGastoKw[1].replace(',', '.'))
+    if (valor > 0) {
+      adicionarGasto({ descricao: texto.trim(), valor, categoria: 'Outros', data: hoje })
+      return `✅ Gasto de R$ ${valor.toFixed(2).replace('.', ',')} registrado! 💸`
+    }
+  }
+
+  // 5. Fallback genérico: "descricao valor"
+  const matchGenerico = t.match(REGEX_GASTO_GENERICO)
+  if (matchGenerico) {
+    const valor = parseFloat(matchGenerico[2].replace(',', '.'))
     if (valor > 0 && valor < 100000) {
-      adicionarGasto({ descricao, valor, categoria: 'Outros', data: hoje })
+      adicionarGasto({ descricao: texto.trim(), valor, categoria: 'Outros', data: hoje })
       return `✅ Gasto de R$ ${valor.toFixed(2).replace('.', ',')} registrado! 💸`
     }
   }
@@ -91,7 +96,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('')
   const [gravando, setGravando] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const { adicionarGasto, adicionarReceita, adicionarDivida, gastos, receitas, dividas, totalGastos, totalReceitas, totalDividas } = useApp()
+  const { adicionarGasto, adicionarReceita, adicionarDivida, totalGastos, totalReceitas, totalDividas } = useApp()
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -110,11 +115,13 @@ export default function ChatPage() {
     setMensagens(prev => [...prev, msgUsuario])
     setInput('')
 
-    setTimeout(async () => {
-      const resposta = parseComando(
-        texto, adicionarGasto, adicionarReceita, adicionarDivida,
-        gastos, receitas, dividas, totalGastos, totalReceitas, totalDividas
-      )
+    // Captura os valores atuais sincronamente antes do setTimeout
+    const resposta = parseComando(
+      texto, adicionarGasto, adicionarReceita, adicionarDivida,
+      totalGastos, totalReceitas, totalDividas
+    )
+
+    setTimeout(() => {
       const msgBot: Mensagem = {
         id: (Date.now() + 1).toString(),
         tipo: 'assistente',

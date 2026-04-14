@@ -34,16 +34,19 @@ export default function ReceitasPage() {
   const salvar = async () => {
     if (!form.descricao || !form.valor) return
     setSalvando(true)
-    await adicionarReceita({
-      descricao: form.descricao,
-      categoria: form.categoria,
-      valor: parseFloat(form.valor.replace(',', '.')),
-      tipo: form.tipo,
-      data: form.data,
-    })
-    setForm({ descricao: '', categoria: 'Salário', valor: '', tipo: 'recebido', data: new Date().toISOString().split('T')[0] })
-    setShowForm(false)
-    setSalvando(false)
+    try {
+      await adicionarReceita({
+        descricao: form.descricao,
+        categoria: form.categoria,
+        valor: parseFloat(form.valor.replace(',', '.')),
+        tipo: form.tipo,
+        data: form.data,
+      })
+      setForm({ descricao: '', categoria: 'Salário', valor: '', tipo: 'recebido', data: new Date().toISOString().split('T')[0] })
+      setShowForm(false)
+    } finally {
+      setSalvando(false)
+    }
   }
 
   const catEmoji = (cat: string) => CATEGORIAS.find(c => c.label === cat)?.emoji || '💵'

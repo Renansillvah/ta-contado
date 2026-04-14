@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Trash2, CreditCard, Building2, Pin, Package } from 'lucide-react'
+import { Plus, Trash2, Package } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -14,9 +14,9 @@ interface FormDivida {
 }
 
 const TIPOS = [
-  { value: 'cartao', label: 'Cartão', emoji: '💳', icon: CreditCard },
-  { value: 'emprestimo', label: 'Empréstimo', emoji: '🏦', icon: Building2 },
-  { value: 'outros', label: 'Outros', emoji: '📌', icon: Pin },
+  { value: 'cartao', label: 'Cartão', emoji: '💳' },
+  { value: 'emprestimo', label: 'Empréstimo', emoji: '🏦' },
+  { value: 'outros', label: 'Outros', emoji: '📌' },
 ]
 
 export default function DividasPage() {
@@ -32,20 +32,23 @@ export default function DividasPage() {
   const salvar = async () => {
     if (!form.nome || !form.valor_total) return
     setSalvando(true)
-    await adicionarDivida({
-      nome: form.nome,
-      tipo: form.tipo,
-      valor_total: parseFloat(form.valor_total.replace(',', '.')),
-      valor_pago: 0,
-      credor: form.credor || undefined,
-      vencimento: form.vencimento || undefined,
-      parcelado: form.parcelado,
-      parcelas: form.parcelado && form.parcelas ? parseInt(form.parcelas) : undefined,
-      parcela_atual: 0,
-    })
-    setForm({ nome: '', tipo: 'cartao', valor_total: '', credor: '', vencimento: '', parcelado: false, parcelas: '' })
-    setShowForm(false)
-    setSalvando(false)
+    try {
+      await adicionarDivida({
+        nome: form.nome,
+        tipo: form.tipo,
+        valor_total: parseFloat(form.valor_total.replace(',', '.')),
+        valor_pago: 0,
+        credor: form.credor || undefined,
+        vencimento: form.vencimento || undefined,
+        parcelado: form.parcelado,
+        parcelas: form.parcelado && form.parcelas ? parseInt(form.parcelas) : undefined,
+        parcela_atual: 0,
+      })
+      setForm({ nome: '', tipo: 'cartao', valor_total: '', credor: '', vencimento: '', parcelado: false, parcelas: '' })
+      setShowForm(false)
+    } finally {
+      setSalvando(false)
+    }
   }
 
   const registrarPagamento = async () => {
