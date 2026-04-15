@@ -1,15 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { Mic, Send, WifiOff, TrendingDown, TrendingUp, BarChart2, CreditCard } from 'lucide-react'
+import { Mic, Send, WifiOff } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-
-const BOTOES_RAPIDOS = [
-  { label: 'Gasto', Icon: TrendingDown, exemplo: 'Almoço 25 reais', color: 'text-destructive' },
-  { label: 'Recebi', Icon: TrendingUp, exemplo: 'Recebi 3000 de salário', color: 'text-primary' },
-  { label: 'Resumo', Icon: BarChart2, exemplo: 'Resumo do mês', color: 'text-blue-400' },
-  { label: 'Dívida', Icon: CreditCard, exemplo: 'Devo 800 no Nubank', color: 'text-orange-400' },
-]
 
 interface Mensagem {
   id: string
@@ -21,7 +14,7 @@ interface Mensagem {
 const MSG_INICIAL: Mensagem = {
   id: '0',
   tipo: 'assistente',
-  conteudo: `Olá! Bem-vindo ao Tá Contato!\n\nMe conta teus gastos, receitas e dívidas:\n\n"Almoço 25 reais"\n"Recebi 3 mil de freela"\n"Devo 800 no Nubank"\n"Como foi abril?"\n\nUse os botões abaixo ou o microfone!`,
+  conteudo: `Olá! Bem-vindo ao Tá Contado!\n\nMe conta teus gastos, receitas e dívidas:\n\n"Almoço 25 reais"\n"Recebi 3 mil de freela"\n"Devo 800 no Nubank"\n"Como foi abril?"\n\nUse os botões abaixo ou o microfone!`,
   timestamp: new Date(),
 }
 
@@ -110,7 +103,6 @@ export default function ChatPage() {
   const [gravando, setGravando] = useState(false)
   const [offline, setOffline] = useState(!navigator.onLine)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const on = () => setOffline(false)
@@ -192,7 +184,7 @@ export default function ChatPage() {
             {msg.tipo === 'assistente' && (
               <div className="w-7 h-7 rounded-xl overflow-hidden shrink-0 mr-2 mt-0.5">
                 <img
-                  src="https://pub-c0bfb119504542e0b2e6ebc8f6b3b1df.r2.dev/user-uploads/user_37oySykXrlZ5YXKyzjL0vXOVtjM/9e3294a7-c91c-4fdf-98f5-fc3099336a6e.png"
+                  src="https://pub-c0bfb119504542e0b2e6ebc8f6b3b1df.r2.dev/user-uploads/user_37oySykXrlZ5YXKyzjL0vXOVtjM/8ef35207-ea13-4c6a-8dfe-458e04223f9f.png"
                   alt="TC"
                   className="w-full h-full object-cover"
                   onError={e => {
@@ -214,7 +206,7 @@ export default function ChatPage() {
               style={
                 msg.tipo === 'usuario'
                   ? { backgroundColor: 'oklch(0.48 0.16 162)', boxShadow: '0 2px 10px oklch(0.48 0.16 162 / 30%)' }
-                  : { backgroundColor: 'oklch(0.16 0.012 250)', boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' }
+                  : { backgroundColor: 'oklch(0.22 0.04 240)', boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' }
               }
             >
               <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.conteudo}</p>
@@ -228,21 +220,7 @@ export default function ChatPage() {
       </div>
 
       {/* Input area */}
-      <div className="px-4 py-3 border-t" style={{ borderColor: 'oklch(1 0 0 / 7%)' }}>
-        {/* Botões rápidos */}
-        <div className="flex gap-1.5 mb-3 overflow-x-auto">
-          {BOTOES_RAPIDOS.map(b => (
-            <button
-              key={b.label}
-              onClick={() => { setInput(b.exemplo); setTimeout(() => inputRef.current?.focus(), 50) }}
-              className={`shrink-0 bg-secondary text-foreground text-[11px] rounded-full px-3 py-1.5 border border-border hover:border-primary transition-colors flex items-center gap-1.5 font-medium`}
-            >
-              <b.Icon size={11} className={b.color} />
-              {b.label}
-            </button>
-          ))}
-        </div>
-
+      <div className="px-4 py-3 border-t" style={{ borderColor: 'oklch(1 0 0 / 8%)' }}>
         <div className="flex items-center gap-2">
           <button
             onClick={toggleGravacao}
@@ -253,7 +231,6 @@ export default function ChatPage() {
             <Mic size={17} />
           </button>
           <input
-            ref={inputRef}
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}

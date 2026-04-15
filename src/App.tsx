@@ -19,51 +19,57 @@ const TABS = [
   { id: 'resumo', label: 'Resumo', Icon: BarChart2 },
 ] as const
 
+const NOVA_LOGO = 'https://pub-c0bfb119504542e0b2e6ebc8f6b3b1df.r2.dev/user-uploads/user_37oySykXrlZ5YXKyzjL0vXOVtjM/8ef35207-ea13-4c6a-8dfe-458e04223f9f.png'
+
 function Header({ nomeUsuario }: { nomeUsuario: string }) {
   const { totalGastos, totalReceitas } = useApp()
-  const saldo = totalReceitas - totalGastos
 
   return (
     <div
       className="px-4 pt-3.5 pb-3"
-      style={{ backgroundColor: 'oklch(0.48 0.16 162)' }}
+      style={{ backgroundColor: 'oklch(0.42 0.14 240)' }}
     >
       <div className="flex items-center justify-between">
         {/* Logo + identidade */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl overflow-hidden shrink-0" style={{ boxShadow: '0 2px 12px oklch(0 0 0 / 30%)' }}>
+          <div
+            className="w-10 h-10 rounded-2xl overflow-hidden shrink-0 bg-white/10"
+            style={{ boxShadow: '0 2px 12px oklch(0 0 0 / 30%)' }}
+          >
             <img
-              src="https://pub-c0bfb119504542e0b2e6ebc8f6b3b1df.r2.dev/user-uploads/user_37oySykXrlZ5YXKyzjL0vXOVtjM/9e3294a7-c91c-4fdf-98f5-fc3099336a6e.png"
-              alt="Tá Contato"
+              src={NOVA_LOGO}
+              alt="Tá Contado"
               className="w-full h-full object-cover"
               onError={e => {
                 const el = e.target as HTMLImageElement
                 el.style.display = 'none'
                 const parent = el.parentElement!
                 parent.style.background = 'oklch(0.38 0.14 162)'
-                parent.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-weight:800;font-size:14px;color:white;font-family:Poppins,Inter,sans-serif;letter-spacing:0.5px">TC</span>'
+                parent.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-weight:800;font-size:13px;color:white;font-family:Poppins,Inter,sans-serif;letter-spacing:0.5px">TC</span>'
               }}
             />
           </div>
           <div>
-            <p className="font-display font-700 text-white text-[15px] leading-tight tracking-tight">Tá Contato</p>
+            <p className="font-display font-bold text-white text-[15px] leading-tight tracking-tight">Tá Contado</p>
             <p className="text-[11px] text-white/65 leading-tight mt-0.5">
               {nomeUsuario ? `Olá, ${nomeUsuario}! 👋` : 'Assessor Financeiro Pessoal'}
             </p>
           </div>
         </div>
 
-        {/* Saldo resumido */}
+        {/* Gastos e Receitas — sem saldo */}
         <div className="text-right">
-          <p className="text-[10px] text-white/55 uppercase tracking-wider mb-0.5">Saldo geral</p>
-          <p className={`text-base font-bold leading-tight ${saldo >= 0 ? 'text-white' : 'text-red-300'}`}>
-            R$ {saldo.toFixed(2).replace('.', ',')}
-          </p>
-          <p className="text-[10px] text-white/50">
-            <span className="text-red-300">−{Number(totalGastos).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, '.')}</span>
-            {' / '}
-            <span className="text-emerald-300">+{Number(totalReceitas).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, '.')}</span>
-          </p>
+          <div className="flex items-center gap-3">
+            <div>
+              <p className="text-[10px] text-white/50 mb-0.5">Gastos</p>
+              <p className="text-sm font-bold text-red-300">R$ {Number(totalGastos).toFixed(2).replace('.', ',')}</p>
+            </div>
+            <div className="w-px h-8 bg-white/20" />
+            <div>
+              <p className="text-[10px] text-white/50 mb-0.5">Receitas</p>
+              <p className="text-sm font-bold text-emerald-300">R$ {Number(totalReceitas).toFixed(2).replace('.', ',')}</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -88,10 +94,10 @@ function AppContent() {
       {showOnboarding && <Onboarding onConcluir={concluirOnboarding} />}
       <Header nomeUsuario={nomeUsuario} />
 
-      {/* Tab bar premium */}
+      {/* Tab bar */}
       <div
         className="flex border-b bg-background"
-        style={{ borderColor: 'oklch(1 0 0 / 7%)' }}
+        style={{ borderColor: 'oklch(1 0 0 / 8%)' }}
       >
         {TABS.map(({ id, label, Icon }) => (
           <button
