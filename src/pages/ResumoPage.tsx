@@ -1,16 +1,29 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useApp } from '@/context/AppContext'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { format } from 'date-fns'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { format, subMonths, startOfMonth } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Copy, FileText, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 function formatBRL(v: number) {
   return `R$ ${v.toFixed(2).replace('.', ',')}`
 }
 
+// Gera array com os últimos 6 meses no formato 'yyyy-MM'
+function ultimos6Meses(): string[] {
+  const meses: string[] = []
+  for (let i = 5; i >= 0; i--) {
+    meses.push(format(subMonths(startOfMonth(new Date()), i), 'yyyy-MM'))
+  }
+  return meses
+}
+
 export default function ResumoPage() {
   const { gastos, receitas, dividas, totalGastos, totalReceitas, totalDividas, loading } = useApp()
+  const [relatorio, setRelatorio] = useState<string | null>(null)
+  const [gerandoRelatorio, setGerandoRelatorio] = useState(false)
   // Calculado dentro do componente para refletir o mês correto sempre
   const MES_ATUAL = format(new Date(), 'yyyy-MM')
   const MES_LABEL = format(new Date(), 'MMM. yy', { locale: ptBR }).toUpperCase()
@@ -31,28 +44,90 @@ export default function ResumoPage() {
   const pagamentosDivida = useMemo(() =>
     dividas.reduce((s, d) => s + Number(d.valor_pago), 0), [dividas])
 
-  // Dados por mês para gráficos
+  const MES_KEY = format(new Date(), 'yyyy-MM')
+
+  const gerarRelatorio = () => {
+    setGerandoRelatorio(true)
+    setTimeout(() => {
+      const mesNome = format(new Date(), 'MMMM yyyy', { locale: ptBR })
+      const mesAnteriorKey = format(subMonths(new Date(), 1), 'yyyy-MM')
+
+      // Por categoria
+      const porCategoria: Record<string, number> = {}
+      gastos.filter(g => g.data.startsWith(MES_ATUAL)).forEach(g => {
+        porCategoria[g.categoria] = (porCategoria[g.categoria] || 0) + Number(g.valor)
+      })
+
+      const gastosMesAtual = Object.values(porCategoria).reduce((s, v) => s + v, 0)
+      const receitasMesAtual = receitas.filter(r => r.data.startsWith(MES_ATUAL) && r.tipo === 'recebido').reduce((s, r) => s + Number(r.valor), 0)
+      const gastosMesAnterior = gastos.filter(g => g.data.startsWith(mesAnteriorKey)).reduce((s, g) => s + Number(g.valor), 0)
+      const dividasPagas = dividas.filter(d => Number(d.valor_pago) > 0).reduce((s, d) => s + Number(d.valor_pago), 0)
+      const saldo = receitasMesAtual - gastosMesAtual
+      const varGastos = gastosMesAnterior > 0 ? ((gastosMesAtual - gastosMesAnterior) / gastosMesAnterior) * 100 : 0
+
+      const catLinhas = Object.entries(porCategoria)
+        .sort((a, b) => b[1] - a[1])
+        .map(([cat, val]) => `  • ${cat}: R$ ${val.toFixed(2).replace('.', ',')}`)
+        .join('\n')
+
+      const conselho = saldo < 0
+        ? 'Atenção: seus gastos superaram as receitas este mês. Tente reduzir gastos com lazer e compras nos próximos meses.'
+        : saldo < receitasMesAtual * 0.2
+          ? 'Você está gastando muito perto do limite. Procure guardar pelo menos 20% da renda.'
+          : 'Ótimo trabalho! Você manteve um saldo positivo. Considere investir parte do que sobrou.'
+
+      const texto = `📊 RELATÓRIO DE ${mesNome.toUpperCase()}
+${'─'.repeat(36)}
+
+💸 GASTOS POR CATEGORIA:
+${catLinhas || '  (sem gastos registrados)'}
+
+Total gasto: R$ ${gastosMesAtual.toFixed(2).replace('.', ',')}
+${gastosMesAnterior > 0 ? `Comparado ao mês anterior: ${varGastos > 0 ? '+' : ''}${varGastos.toFixed(1)}%` : ''}
+
+💰 RECEITAS RECEBIDAS: R$ ${receitasMesAtual.toFixed(2).replace('.', ',')}
+
+💳 DÍVIDAS PAGAS NO MÊS: R$ ${dividasPagas.toFixed(2).replace('.', ',')}
+Dívida total restante: R$ ${totalDividas.toFixed(2).replace('.', ',')}
+
+📌 SALDO FINAL: R$ ${saldo.toFixed(2).replace('.', ',')} ${saldo >= 0 ? '😊' : '😟'}
+
+💡 CONSELHO:
+${conselho}
+
+—— Gerado pelo Tá Contato ——`
+
+      setRelatorio(texto)
+      setGerandoRelatorio(false)
+    }, 800)
+  }
+
+  // Dados por mês para gráficos — sempre 6 meses, meses sem dados mostram valor mínimo
   const dadosDividaMes = useMemo(() => {
-    const meses: Record<string, number> = {}
+    const porMes: Record<string, number> = {}
     dividas.forEach(d => {
       const m = (d.created_at || '').substring(0, 7)
-      if (m) meses[m] = (meses[m] || 0) + (Number(d.valor_total) - Number(d.valor_pago))
+      if (m) porMes[m] = (porMes[m] || 0) + (Number(d.valor_total) - Number(d.valor_pago))
     })
-    return Object.entries(meses).slice(-6).map(([mes, valor]) => ({
-      mes: format(new Date(mes + '-01'), 'MMM', { locale: ptBR }),
-      valor,
+    return ultimos6Meses().map(mes => ({
+      mesKey: mes,
+      mes: format(new Date(mes + '-15'), 'MMM', { locale: ptBR }),
+      valor: porMes[mes] ?? 0,
+      semDados: !porMes[mes],
     }))
   }, [dividas])
 
   const dadosGastosMes = useMemo(() => {
-    const meses: Record<string, number> = {}
+    const porMes: Record<string, number> = {}
     gastos.forEach(g => {
       const m = g.data.substring(0, 7)
-      if (m) meses[m] = (meses[m] || 0) + Number(g.valor)
+      if (m) porMes[m] = (porMes[m] || 0) + Number(g.valor)
     })
-    return Object.entries(meses).slice(-6).map(([mes, valor]) => ({
-      mes: format(new Date(mes + '-01'), 'MMM', { locale: ptBR }),
-      valor,
+    return ultimos6Meses().map(mes => ({
+      mesKey: mes,
+      mes: format(new Date(mes + '-15'), 'MMM', { locale: ptBR }),
+      valor: porMes[mes] ?? 0,
+      semDados: !porMes[mes],
     }))
   }, [gastos])
 
@@ -133,27 +208,68 @@ export default function ResumoPage() {
             </div>
           </div>
 
+          {/* Relatório Mensal */}
+          <div className="bg-card rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span>📋</span>
+                <span className="text-xs font-bold text-muted-foreground tracking-wider">RELATÓRIO DO MÊS</span>
+              </div>
+              <button
+                onClick={gerarRelatorio}
+                disabled={gerandoRelatorio}
+                className="flex items-center gap-1.5 text-xs bg-primary text-primary-foreground rounded-xl px-3 py-1.5 font-semibold disabled:opacity-50"
+              >
+                {gerandoRelatorio ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                {gerandoRelatorio ? 'Gerando...' : 'Gerar Relatório'}
+              </button>
+            </div>
+            {relatorio ? (
+              <>
+                <pre className="text-xs text-foreground whitespace-pre-wrap font-mono bg-secondary rounded-xl p-3 leading-relaxed max-h-64 overflow-y-auto">
+                  {relatorio}
+                </pre>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(relatorio)
+                    toast.success('Copiado!', { description: 'Relatório copiado para a área de transferência.' })
+                  }}
+                  className="mt-2 w-full flex items-center justify-center gap-2 text-xs text-primary border border-primary/30 rounded-xl py-2 font-medium"
+                >
+                  <Copy size={13} /> Copiar
+                </button>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">Toque em "Gerar Relatório" para ver um resumo completo do mês.</p>
+            )}
+          </div>
+
           {/* Gráfico Dívida por Mês */}
           <div className="bg-card rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
               <span>💳</span>
               <span className="text-xs font-bold text-muted-foreground tracking-wider">DÍVIDA RESTANTE POR MÊS</span>
             </div>
-            {dadosDividaMes.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">Sem dados de dívida ainda.</p>
-            ) : (
-              <ResponsiveContainer width="100%" height={120}>
-                <BarChart data={dadosDividaMes} barSize={24}>
-                  <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#888' }} axisLine={false} tickLine={false} />
-                  <YAxis hide />
-                  <Tooltip
-                    formatter={(v: number) => [`R$ ${v.toFixed(2).replace('.', ',')}`, 'Dívida']}
-                    contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
-                  />
-                  <Bar dataKey="valor" fill="oklch(0.65 0.22 25)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
+            <ResponsiveContainer width="100%" height={130}>
+              <BarChart data={dadosDividaMes} barSize={28}>
+                <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#888' }} axisLine={false} tickLine={false} interval={0} />
+                <YAxis hide domain={[0, 'auto']} />
+                <Tooltip
+                  formatter={(v: number, _: string, props: any) =>
+                    props.payload?.semDados ? ['Sem dados', ''] : [`R$ ${v.toFixed(2).replace('.', ',')}`, 'Dívida']
+                  }
+                  contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+                />
+                <Bar dataKey={(d) => d.semDados ? 0.5 : d.valor} radius={[4, 4, 0, 0]}>
+                  {dadosDividaMes.map((entry) => (
+                    <Cell
+                      key={entry.mesKey}
+                      fill={entry.semDados ? '#555' : entry.mesKey === MES_KEY ? 'oklch(0.65 0.22 25)' : 'oklch(0.55 0.18 25)'}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
 
           {/* Gráfico Gastos por Mês */}
@@ -162,21 +278,26 @@ export default function ResumoPage() {
               <span>💸</span>
               <span className="text-xs font-bold text-muted-foreground tracking-wider">GASTOS POR MÊS</span>
             </div>
-            {dadosGastosMes.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">Sem gastos ainda.</p>
-            ) : (
-              <ResponsiveContainer width="100%" height={120}>
-                <BarChart data={dadosGastosMes} barSize={24}>
-                  <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#888' }} axisLine={false} tickLine={false} />
-                  <YAxis hide />
-                  <Tooltip
-                    formatter={(v: number) => [`R$ ${v.toFixed(2).replace('.', ',')}`, 'Gastos']}
-                    contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
-                  />
-                  <Bar dataKey="valor" fill="oklch(0.65 0.19 155)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
+            <ResponsiveContainer width="100%" height={130}>
+              <BarChart data={dadosGastosMes} barSize={28}>
+                <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#888' }} axisLine={false} tickLine={false} interval={0} />
+                <YAxis hide domain={[0, 'auto']} />
+                <Tooltip
+                  formatter={(v: number, _: string, props: any) =>
+                    props.payload?.semDados ? ['Sem dados', ''] : [`R$ ${v.toFixed(2).replace('.', ',')}`, 'Gastos']
+                  }
+                  contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+                />
+                <Bar dataKey={(d) => d.semDados ? 0.5 : d.valor} radius={[4, 4, 0, 0]}>
+                  {dadosGastosMes.map((entry) => (
+                    <Cell
+                      key={entry.mesKey}
+                      fill={entry.semDados ? '#555' : entry.mesKey === MES_KEY ? 'oklch(0.65 0.19 155)' : 'oklch(0.50 0.15 155)'}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </>
       )}

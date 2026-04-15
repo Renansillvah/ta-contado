@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Skeleton } from '@/components/ui/skeleton'
+import { toast } from 'sonner'
 
 const CATEGORIAS = [
   { label: 'Alimentação', emoji: '🍔' },
@@ -32,6 +33,44 @@ export default function GastosPage() {
     data: new Date().toISOString().split('T')[0],
   })
   const [salvando, setSalvando] = useState(false)
+  const [meta, setMeta] = useState(() => {
+    const v = localStorage.getItem('meta_mensal')
+    return v ? parseFloat(v) : 0
+  })
+  const [editandoMeta, setEditandoMeta] = useState(false)
+  const [metaInput, setMetaInput] = useState('')
+  const alertado80Ref = useState(false)
+
+  const MES_ATUAL = format(new Date(), 'yyyy-MM')
+  const gastosMes = useMemo(() =>
+    gastos.filter(g => g.data.startsWith(MES_ATUAL)).reduce((s, g) => s + Number(g.valor), 0),
+  [gastos])
+
+  const pctMeta = meta > 0 ? Math.min((gastosMes / meta) * 100, 110) : 0
+
+  useEffect(() => {
+    if (meta <= 0) return
+    const pct = (gastosMes / meta) * 100
+    if (pct >= 100 && !alertado80Ref[0]) {
+      alertado80Ref[0] = true
+      toast.error('🚨 Você passou do limite!', { description: `Meta de R$ ${meta.toFixed(2).replace('.', ',')} ultrapassada.` })
+    } else if (pct >= 80 && pct < 100 && !alertado80Ref[0]) {
+      alertado80Ref[0] = true
+      toast.warning('⚠️ Você usou 80% do seu orçamento!', { description: `Faltam R$ ${(meta - gastosMes).toFixed(2).replace('.', ',')} para o limite.` })
+    }
+  }, [gastosMes, meta])
+
+  const salvarMeta = () => {
+    const v = parseFloat(metaInput.replace(',', '.'))
+    if (v > 0) {
+      localStorage.setItem('meta_mensal', String(v))
+      setMeta(v)
+      alertado80Ref[0] = false
+    }
+    setEditandoMeta(false)
+  }
+
+  const corBarra = pctMeta >= 90 ? 'bg-destructive' : pctMeta >= 60 ? 'bg-yellow-500' : 'bg-primary'
 
   const salvar = async () => {
     if (!form.descricao || !form.valor) return
@@ -54,7 +93,59 @@ export default function GastosPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-3">
+      {/* Card Meta Mensal */}
+      <div className="px-3 pt-3">
+        <div className="bg-card rounded-xl p-4 mb-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-muted-foreground tracking-wider">META MENSAL</span>
+            <button
+              onClick={() => { setMetaInput(meta > 0 ? String(meta) : ''); setEditandoMeta(true) }}
+              className="text-xs text-primary font-medium"
+            >
+              {meta > 0 ? 'Editar' : 'Definir meta'}
+            </button>
+          </div>
+
+          {editandoMeta ? (
+            <div className="flex gap-2">
+              <input
+                type="number"
+                placeholder="Limite do mês (R$)"
+                value={metaInput}
+                onChange={e => setMetaInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && salvarMeta()}
+                autoFocus
+                className="flex-1 bg-secondary rounded-xl px-3 py-2 text-sm outline-none border border-border focus:border-primary"
+              />
+              <button onClick={salvarMeta} className="bg-primary text-primary-foreground rounded-xl px-4 py-2 text-sm font-semibold">OK</button>
+            </div>
+          ) : meta > 0 ? (
+            <>
+              <div className="flex justify-between text-sm mb-1.5">
+                <span className="font-medium">R$ {gastosMes.toFixed(2).replace('.', ',')}</span>
+                <span className="text-muted-foreground">de R$ {meta.toFixed(2).replace('.', ',')}</span>
+              </div>
+              <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${corBarra}`}
+                  style={{ width: `${Math.min(pctMeta, 100)}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1.5">
+                {pctMeta >= 100
+                  ? '🚨 Você passou do limite!'
+                  : pctMeta >= 80
+                    ? `⚠️ ${pctMeta.toFixed(0)}% usado — faltam R$ ${(meta - gastosMes).toFixed(2).replace('.', ',')}`
+                    : `${pctMeta.toFixed(0)}% usado`}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">Nenhuma meta definida para este mês.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="px-3 pb-3">
         <button
           onClick={() => setShowForm(true)}
           className="w-full bg-primary text-primary-foreground rounded-xl py-3 font-semibold flex items-center justify-center gap-2"
@@ -77,7 +168,7 @@ export default function GastosPage() {
         ) : (
           <div className="space-y-2">
             {gastos.map(g => (
-              <div key={g.id} className="bg-card rounded-xl px-4 py-3 flex items-center justify-between">
+              <div key={g.id} className="bg-card rounded-xl px-4 py-3 flex items-center justify-between animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">{catEmoji(g.categoria)}</span>
                   <div>
@@ -92,7 +183,9 @@ export default function GastosPage() {
                     R$ {Number(g.valor).toFixed(2).replace('.', ',')}
                   </span>
                   <button
-                    onClick={() => removerGasto(g.id)}
+                    onClick={() => {
+                      if (window.confirm('Tem certeza que quer apagar este gasto?')) removerGasto(g.id)
+                    }}
                     className="text-muted-foreground hover:text-destructive transition-colors p-1"
                   >
                     <Trash2 size={15} />

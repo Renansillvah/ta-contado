@@ -1,7 +1,8 @@
-import { useState } from 'react'
-import { Plus, Trash2, Package } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Plus, Trash2, Package, AlertTriangle, Clock, AlertCircle } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { Skeleton } from '@/components/ui/skeleton'
+import { differenceInDays, parseISO } from 'date-fns'
 
 interface FormDivida {
   nome: string
@@ -22,6 +23,19 @@ const TIPOS = [
 export default function DividasPage() {
   const { dividas, adicionarDivida, removerDivida, pagarDivida, loading } = useApp()
   const [showForm, setShowForm] = useState(false)
+
+  // Alertas de vencimento
+  const hoje = new Date()
+  const alertas = useMemo(() => {
+    return dividas
+      .filter(d => d.vencimento && Number(d.valor_total) > Number(d.valor_pago))
+      .map(d => {
+        const diff = differenceInDays(parseISO(d.vencimento!), hoje)
+        return { ...d, diff }
+      })
+      .filter(d => d.diff <= 7)
+      .sort((a, b) => a.diff - b.diff)
+  }, [dividas])
   const [showPagamento, setShowPagamento] = useState<string | null>(null)
   const [valorPagamento, setValorPagamento] = useState('')
   const [form, setForm] = useState<FormDivida>({
@@ -62,6 +76,30 @@ export default function DividasPage() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Alertas de vencimento */}
+      {alertas.length > 0 && (
+        <div className="px-3 pt-3 space-y-2">
+          {alertas.map(d => {
+            const vencido = d.diff < 0
+            const urgente = d.diff >= 0 && d.diff <= 3
+            const bg = vencido ? 'bg-destructive/15 border-destructive/40' : urgente ? 'bg-orange-500/15 border-orange-500/40' : 'bg-secondary border-border'
+            const icon = vencido ? <AlertCircle size={15} className="text-destructive shrink-0" /> : urgente ? <AlertTriangle size={15} className="text-orange-500 shrink-0" /> : <Clock size={15} className="text-muted-foreground shrink-0" />
+            const msg = vencido
+              ? `Venceu há ${Math.abs(d.diff)} dia${Math.abs(d.diff) !== 1 ? 's' : ''}`
+              : d.diff === 0
+                ? 'Vence hoje!'
+                : `Vence em ${d.diff} dia${d.diff !== 1 ? 's' : ''}`
+            return (
+              <div key={d.id} className={`flex items-center gap-2 rounded-xl px-3 py-2.5 border text-sm ${bg}`}>
+                {icon}
+                <span className="font-medium flex-1">{d.nome}</span>
+                <span className="text-xs text-muted-foreground">{msg}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       <div className="p-3">
         <button
           onClick={() => setShowForm(true)}
@@ -88,7 +126,7 @@ export default function DividasPage() {
               const restante = Number(d.valor_total) - Number(d.valor_pago)
               const pct = Math.min((Number(d.valor_pago) / Number(d.valor_total)) * 100, 100)
               return (
-                <div key={d.id} className="bg-card rounded-xl p-4">
+                <div key={d.id} className="bg-card rounded-xl p-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className="text-xl">{tipoEmoji(d.tipo)}</span>
@@ -103,7 +141,9 @@ export default function DividasPage() {
                         <p className="font-bold text-destructive text-sm">R$ {restante.toFixed(2).replace('.', ',')}</p>
                       </div>
                       <button
-                        onClick={() => removerDivida(d.id)}
+                        onClick={() => {
+                          if (window.confirm('Tem certeza que quer apagar esta dívida?')) removerDivida(d.id)
+                        }}
                         className="text-muted-foreground hover:text-destructive transition-colors p-1"
                       >
                         <Trash2 size={15} />
