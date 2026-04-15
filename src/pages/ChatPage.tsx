@@ -1,5 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
-import { Mic, Send } from 'lucide-react'
+import { Mic, Send, WifiOff } from 'lucide-react'
+
+const BOTOES_RAPIDOS = [
+  { label: '💸 Gasto', exemplo: 'Almoço 25 reais' },
+  { label: '💰 Recebi', exemplo: 'Recebi 3000 de salário' },
+  { label: '📊 Resumo', exemplo: 'Resumo do mês' },
+  { label: '💳 Dívidas', exemplo: 'Devo 800 no Nubank' },
+]
 import { useApp } from '@/context/AppContext'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -14,7 +21,7 @@ interface Mensagem {
 const MSG_INICIAL: Mensagem = {
   id: '0',
   tipo: 'assistente',
-  conteudo: `Olá! 👋 Agora você pode falar comigo sobre tudo:\n\n💸 "Almoço 25 reais"\n💰 "Recebi 3 mil de freela"\n💳 "Devo 800 no cartão Nubank"\n📊 "Como foi abril?"\n💡 "Qual meu saldo de março?"\n\nDigite ou use o 🎤 microfone!`,
+  conteudo: `Olá! 👋 Bem-vindo ao Tá Contato!\n\nMe conta teus gastos, receitas e dívidas como mensagem:\n\n💸 "Almoço 25 reais"\n💰 "Recebi 3 mil de freela"\n💳 "Devo 800 no Nubank"\n📊 "Como foi abril?"\n\nDigite ou use o 🎤 microfone!`,
   timestamp: new Date(),
 }
 
@@ -25,10 +32,23 @@ const REGEX_RECEITA = /(?:recebi|ganhei|entrou|freela|salário|pagamento|venda)\
 const REGEX_DIVIDA = /(?:devo|tenho\s+(?:uma\s+)?dívida|cartão|financiamento|empréstimo)\s*(?:de\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
 
 // Regex para detectar gastos com palavras-chave explícitas
-const REGEX_GASTO_KEYWORDS = /(?:gastei|paguei|comprei|almoço|jantar|café|gasolina|uber|ifood|mercado|farmácia|luz|água|internet)\s*[a-zA-Zçã]*\s*(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
+const REGEX_GASTO_KEYWORDS = /(?:gastei|paguei|comprei|almoço|lanche|café|jantar|gasolina|uber|ônibus|metrô|ifood|mercado|supermercado|farmácia|remédio|médico|cinema|bar|show|netflix|spotify|roupa|sapato|celular|eletrônico|aluguel|luz|água|internet|gás|curso|livro|escola)\s*[a-zA-Zçãõéíóúàèìòùâêîôûäëïöü]*\s*(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
 
 // Regex genérico "descricao + valor" como fallback de gasto
 const REGEX_GASTO_GENERICO = /^(.+?)\s+(\d+(?:[.,]\d{1,2})?)(?:\s+reais?)?$/i
+
+// Detecta a categoria do gasto com base na descrição
+function detectarCategoria(texto: string): string {
+  const t = texto.toLowerCase()
+  if (/almoço|lanche|café|jantar|restaurante|ifood|delivery|mercado|supermercado|padaria|açougue|feira|doce|sorvete|pizza|hamburguer|sushi/.test(t)) return 'Alimentação'
+  if (/uber|gasolina|ônibus|metrô|taxi|combustível|estacionamento|pedágio|transporte|moto|bicicleta/.test(t)) return 'Transporte'
+  if (/farmácia|remédio|médico|dentista|hospital|consulta|exame|plano de saúde|saúde|academia/.test(t)) return 'Saúde'
+  if (/cinema|bar|show|netflix|spotify|teatro|jogos|game|streaming|lazer|viagem|hotel|passeio/.test(t)) return 'Lazer'
+  if (/roupa|sapato|celular|eletrônico|computador|notebook|tênis|bolsa|acessório|compras|shopping/.test(t)) return 'Compras'
+  if (/aluguel|luz|água|internet|gás|condomínio|iptu|financiamento|moradia|casa|apartamento/.test(t)) return 'Moradia'
+  if (/curso|livro|escola|faculdade|universidade|material|educação|diploma|treinamento/.test(t)) return 'Educação'
+  return 'Outros'
+}
 
 function parseComando(
   texto: string,
@@ -73,8 +93,9 @@ function parseComando(
   if (matchGastoKw) {
     const valor = parseFloat(matchGastoKw[1].replace(',', '.'))
     if (valor > 0) {
-      adicionarGasto({ descricao: texto.trim(), valor, categoria: 'Outros', data: hoje })
-      return `✅ Gasto de R$ ${valor.toFixed(2).replace('.', ',')} registrado! 💸`
+      const categoria = detectarCategoria(texto)
+      adicionarGasto({ descricao: texto.trim(), valor, categoria, data: hoje })
+      return `✅ Gasto de R$ ${valor.toFixed(2).replace('.', ',')} registrado em **${categoria}**! 💸`
     }
   }
 
@@ -83,9 +104,15 @@ function parseComando(
   if (matchGenerico) {
     const valor = parseFloat(matchGenerico[2].replace(',', '.'))
     if (valor > 0 && valor < 100000) {
-      adicionarGasto({ descricao: texto.trim(), valor, categoria: 'Outros', data: hoje })
-      return `✅ Gasto de R$ ${valor.toFixed(2).replace('.', ',')} registrado! 💸`
+      const categoria = detectarCategoria(texto)
+      adicionarGasto({ descricao: texto.trim(), valor, categoria, data: hoje })
+      return `✅ Gasto de R$ ${valor.toFixed(2).replace('.', ',')} registrado em **${categoria}**! 💸`
     }
+  }
+
+  // Texto sem nenhum número — pedir valor
+  if (/[a-zA-ZÀ-ú]/.test(t) && !/\d/.test(t)) {
+    return `🤔 Qual o valor? Por exemplo:\n"${texto.trim()} 50 reais"`
   }
 
   return `🤔 Não entendi muito bem. Tente:\n• "Almoço 25 reais"\n• "Recebi 3000 de freela"\n• "Devo 500 no cartão"\n• "Resumo do mês"`
@@ -95,7 +122,17 @@ export default function ChatPage() {
   const [mensagens, setMensagens] = useState<Mensagem[]>([MSG_INICIAL])
   const [input, setInput] = useState('')
   const [gravando, setGravando] = useState(false)
+  const [offline, setOffline] = useState(!navigator.onLine)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const on = () => setOffline(false)
+    const off = () => setOffline(true)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
   const { adicionarGasto, adicionarReceita, adicionarDivida, totalGastos, totalReceitas, totalDividas } = useApp()
 
   useEffect(() => {
@@ -155,6 +192,11 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-full">
+      {offline && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-destructive/15 border-b border-destructive/30 text-destructive text-xs font-medium">
+          <WifiOff size={13} /> Sem conexão, tente novamente
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {mensagens.map(msg => (
           <div key={msg.id} className={`flex ${msg.tipo === 'usuario' ? 'justify-end' : 'justify-start'}`}>
@@ -176,6 +218,19 @@ export default function ChatPage() {
       </div>
 
       <div className="p-3 border-t border-border">
+        {/* Botões rápidos */}
+        <div className="flex gap-1.5 mb-2 overflow-x-auto pb-0.5">
+          {BOTOES_RAPIDOS.map(b => (
+            <button
+              key={b.label}
+              onClick={() => { setInput(b.exemplo); setTimeout(() => inputRef.current?.focus(), 50) }}
+              className="shrink-0 bg-secondary text-foreground text-xs rounded-full px-3 py-1.5 border border-border hover:border-primary hover:text-primary transition-colors"
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
+
         <div className="flex items-center gap-2">
           <button
             onClick={toggleGravacao}
@@ -186,6 +241,7 @@ export default function ChatPage() {
             <Mic size={18} />
           </button>
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
