@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MessageSquare, Receipt, CreditCard, DollarSign, BarChart2 } from 'lucide-react'
+import { MessageSquare, Receipt, CreditCard, DollarSign, BarChart2, Database } from 'lucide-react'
 import { AppProvider, useApp } from '@/context/AppContext'
 import ChatPage from '@/pages/ChatPage'
 import GastosPage from '@/pages/GastosPage'
