@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MessageSquare, Receipt, CreditCard, DollarSign, BarChart2, Database } from 'lucide-react'
+import { MessageSquare, Receipt, CreditCard, TrendingUp, BarChart2 } from 'lucide-react'
 import { AppProvider, useApp } from '@/context/AppContext'
 import ChatPage from '@/pages/ChatPage'
 import GastosPage from '@/pages/GastosPage'
@@ -15,45 +15,55 @@ const TABS = [
   { id: 'chat', label: 'Chat', Icon: MessageSquare },
   { id: 'gastos', label: 'Gastos', Icon: Receipt },
   { id: 'dividas', label: 'Dívidas', Icon: CreditCard },
-  { id: 'receitas', label: 'Receitas', Icon: DollarSign },
+  { id: 'receitas', label: 'Receitas', Icon: TrendingUp },
   { id: 'resumo', label: 'Resumo', Icon: BarChart2 },
 ] as const
 
 function Header({ nomeUsuario }: { nomeUsuario: string }) {
   const { totalGastos, totalReceitas } = useApp()
+  const saldo = totalReceitas - totalGastos
 
   return (
-    <div style={{ backgroundColor: 'oklch(0.50 0.17 155)' }} className="px-4 py-2.5">
+    <div
+      className="px-4 pt-3.5 pb-3"
+      style={{ backgroundColor: 'oklch(0.48 0.16 162)' }}
+    >
       <div className="flex items-center justify-between">
+        {/* Logo + identidade */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full overflow-hidden bg-white/20 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-2xl overflow-hidden shrink-0" style={{ boxShadow: '0 2px 12px oklch(0 0 0 / 30%)' }}>
             <img
-              src="https://pub-c0bfb119504542e0b2e6ebc8f6b3b1df.r2.dev/user-uploads/user_37oySykXrlZ5YXKyzjL0vXOVtjM/122d7158-c2f6-4431-8680-59809e067303.jpg"
+              src="https://pub-c0bfb119504542e0b2e6ebc8f6b3b1df.r2.dev/user-uploads/user_37oySykXrlZ5YXKyzjL0vXOVtjM/9e3294a7-c91c-4fdf-98f5-fc3099336a6e.png"
               alt="Tá Contato"
               className="w-full h-full object-cover"
-              onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+              onError={e => {
+                const el = e.target as HTMLImageElement
+                el.style.display = 'none'
+                const parent = el.parentElement!
+                parent.style.background = 'oklch(0.38 0.14 162)'
+                parent.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-weight:800;font-size:14px;color:white;font-family:Poppins,Inter,sans-serif;letter-spacing:0.5px">TC</span>'
+              }}
             />
           </div>
           <div>
-            <p className="font-bold text-white text-sm leading-tight">Tá Contato 🤝</p>
-            <p className="text-xs text-white/70 leading-tight">
-              {nomeUsuario ? `Olá, ${nomeUsuario}!` : 'Assessor Financeiro Pessoal'}
+            <p className="font-display font-700 text-white text-[15px] leading-tight tracking-tight">Tá Contato</p>
+            <p className="text-[11px] text-white/65 leading-tight mt-0.5">
+              {nomeUsuario ? `Olá, ${nomeUsuario}! 👋` : 'Assessor Financeiro Pessoal'}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="bg-white/20 rounded-xl p-2 flex items-center justify-center">
-            <Database size={16} className="text-white" />
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-white/70">Gastos · Receitas</p>
-            <p className="text-sm font-bold text-white">
-              <span className="text-red-300">R$ {Number(totalGastos).toFixed(2).replace('.', ',')}</span>
-              {' · '}
-              <span className="text-white">R$ {Number(totalReceitas).toFixed(2).replace('.', ',')}</span>
-            </p>
-          </div>
+        {/* Saldo resumido */}
+        <div className="text-right">
+          <p className="text-[10px] text-white/55 uppercase tracking-wider mb-0.5">Saldo geral</p>
+          <p className={`text-base font-bold leading-tight ${saldo >= 0 ? 'text-white' : 'text-red-300'}`}>
+            R$ {saldo.toFixed(2).replace('.', ',')}
+          </p>
+          <p className="text-[10px] text-white/50">
+            <span className="text-red-300">−{Number(totalGastos).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, '.')}</span>
+            {' / '}
+            <span className="text-emerald-300">+{Number(totalReceitas).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, '.')}</span>
+          </p>
         </div>
       </div>
     </div>
@@ -78,20 +88,29 @@ function AppContent() {
       {showOnboarding && <Onboarding onConcluir={concluirOnboarding} />}
       <Header nomeUsuario={nomeUsuario} />
 
-      {/* Tabs */}
-      <div className="flex border-b border-border bg-background">
+      {/* Tab bar premium */}
+      <div
+        className="flex border-b bg-background"
+        style={{ borderColor: 'oklch(1 0 0 / 7%)' }}
+      >
         {TABS.map(({ id, label, Icon }) => (
           <button
             key={id}
             onClick={() => setTab(id as Tab)}
-            className={`flex-1 flex flex-col items-center py-2 gap-0.5 text-xs transition-colors ${
+            className={`flex-1 flex flex-col items-center py-2.5 gap-0.5 text-[10px] font-medium transition-all relative ${
               tab === id
-                ? 'text-primary border-b-2 border-primary'
-                : 'text-muted-foreground'
+                ? 'text-primary'
+                : 'text-muted-foreground hover:text-foreground/70'
             }`}
           >
-            <Icon size={18} />
-            <span>{label}</span>
+            <Icon size={17} strokeWidth={tab === id ? 2.2 : 1.8} />
+            <span className="tracking-wide">{label}</span>
+            {tab === id && (
+              <span
+                className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full"
+                style={{ backgroundColor: 'oklch(0.62 0.18 162)' }}
+              />
+            )}
           </button>
         ))}
       </div>
