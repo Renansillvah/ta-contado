@@ -40,8 +40,8 @@ export default function Onboarding({ onConcluir }: OnboardingProps) {
               style={{ boxShadow: '0 8px 32px oklch(0.62 0.18 162 / 40%)' }}
             >
               <img
-                src="https://pub-c0bfb119504542e0b2e6ebc8f6b3b1df.r2.dev/user-uploads/user_37oySykXrlZ5YXKyzjL0vXOVtjM/9e3294a7-c91c-4fdf-98f5-fc3099336a6e.png"
-                alt="Tá Contato"
+                src="https://pub-c0bfb119504542e0b2e6ebc8f6b3b1df.r2.dev/user-uploads/user_37oySykXrlZ5YXKyzjL0vXOVtjM/8ef35207-ea13-4c6a-8dfe-458e04223f9f.png"
+                alt="Tá Contado"
                 className="w-full h-full object-cover"
                 onError={e => {
                   const el = e.target as HTMLImageElement
@@ -53,7 +53,7 @@ export default function Onboarding({ onConcluir }: OnboardingProps) {
               />
             </div>
             <div>
-              <h1 className="text-3xl font-display font-bold text-foreground leading-tight">Tá Contato</h1>
+              <h1 className="text-3xl font-display font-bold text-foreground leading-tight">Tá Contado</h1>
               <p className="text-base text-muted-foreground mt-2">Seu dinheiro organizado com IA</p>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed max-w-[240px]">

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Plus, Trash2, Package, AlertTriangle, Clock, AlertCircle, CreditCard, Building2, MoreHorizontal, CheckCircle2 } from 'lucide-react'
+import { Plus, Trash2, Pencil, Package, AlertTriangle, Clock, AlertCircle, CreditCard, Building2, MoreHorizontal, CheckCircle2, SlidersHorizontal, X } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { Skeleton } from '@/components/ui/skeleton'
 import { differenceInDays, parseISO } from 'date-fns'
@@ -25,12 +25,21 @@ function TipoIcon({ tipo, size = 16 }: { tipo: string; size?: number }) {
   return <t.Icon size={size} className="text-muted-foreground" />
 }
 
+const FORM_VAZIO: FormDivida = {
+  nome: '', tipo: 'cartao', valor_total: '', credor: '', vencimento: '', parcelado: false, parcelas: '',
+}
+
 export default function DividasPage() {
   const { dividas, adicionarDivida, removerDivida, pagarDivida, loading } = useApp()
   const [showForm, setShowForm] = useState(false)
+  const [editandoId, setEditandoId] = useState<string | null>(null)
+  const [showFiltros, setShowFiltros] = useState(false)
+  const [filtroTipo, setFiltroTipo] = useState('Todos')
+  const [filtroStatus, setFiltroStatus] = useState('todos')
+
+  const hoje = new Date()
 
   // Alertas de vencimento
-  const hoje = new Date()
   const alertas = useMemo(() => {
     return dividas
       .filter(d => d.vencimento && Number(d.valor_total) > Number(d.valor_pago))
@@ -42,17 +51,53 @@ export default function DividasPage() {
       .sort((a, b) => a.diff - b.diff)
   }, [dividas])
 
+  // Filtros
+  const dividasFiltradas = useMemo(() => {
+    return dividas.filter(d => {
+      const tipoOk = filtroTipo === 'Todos' || d.tipo === filtroTipo
+      const restante = Number(d.valor_total) - Number(d.valor_pago)
+      const statusOk =
+        filtroStatus === 'todos' ||
+        (filtroStatus === 'ativa' && restante > 0) ||
+        (filtroStatus === 'quitada' && restante <= 0)
+      return tipoOk && statusOk
+    })
+  }, [dividas, filtroTipo, filtroStatus])
+
+  const filtrosAtivos = filtroTipo !== 'Todos' || filtroStatus !== 'todos'
+
   const [showPagamento, setShowPagamento] = useState<string | null>(null)
   const [valorPagamento, setValorPagamento] = useState('')
-  const [form, setForm] = useState<FormDivida>({
-    nome: '', tipo: 'cartao', valor_total: '', credor: '', vencimento: '', parcelado: false, parcelas: '',
-  })
+  const [form, setForm] = useState<FormDivida>(FORM_VAZIO)
   const [salvando, setSalvando] = useState(false)
+
+  const abrirEditar = (d: any) => {
+    setForm({
+      nome: d.nome,
+      tipo: d.tipo,
+      valor_total: String(d.valor_total),
+      credor: d.credor || '',
+      vencimento: d.vencimento || '',
+      parcelado: d.parcelado || false,
+      parcelas: d.parcelas ? String(d.parcelas) : '',
+    })
+    setEditandoId(d.id)
+    setShowForm(true)
+  }
+
+  const fecharForm = () => {
+    setShowForm(false)
+    setEditandoId(null)
+    setForm(FORM_VAZIO)
+  }
 
   const salvar = async () => {
     if (!form.nome || !form.valor_total) return
     setSalvando(true)
     try {
+      if (editandoId) {
+        await removerDivida(editandoId)
+      }
       await adicionarDivida({
         nome: form.nome,
         tipo: form.tipo,
@@ -64,8 +109,7 @@ export default function DividasPage() {
         parcelas: form.parcelado && form.parcelas ? parseInt(form.parcelas) : undefined,
         parcela_atual: 0,
       })
-      setForm({ nome: '', tipo: 'cartao', valor_total: '', credor: '', vencimento: '', parcelado: false, parcelas: '' })
-      setShowForm(false)
+      fecharForm()
     } finally {
       setSalvando(false)
     }
@@ -113,16 +157,86 @@ export default function DividasPage() {
         </div>
       )}
 
-      {/* Botão adicionar */}
-      <div className="px-4 pt-4 pb-3">
+      {/* Botões topo */}
+      <div className="px-4 pt-4 pb-2 flex gap-2">
         <button
-          onClick={() => setShowForm(true)}
-          className="w-full bg-primary text-primary-foreground rounded-2xl py-3.5 font-semibold flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-transform"
+          onClick={() => { setShowForm(true); setEditandoId(null); setForm(FORM_VAZIO) }}
+          className="flex-1 bg-primary text-primary-foreground rounded-2xl py-3.5 font-semibold flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-transform"
         >
           <Plus size={18} strokeWidth={2.5} />
           Adicionar dívida
         </button>
+        <button
+          onClick={() => setShowFiltros(v => !v)}
+          className="relative w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-colors"
+          style={{ backgroundColor: showFiltros ? 'oklch(0.62 0.18 162)' : 'oklch(0.25 0.04 240)' }}
+        >
+          <SlidersHorizontal size={17} className={showFiltros ? 'text-white' : 'text-muted-foreground'} />
+          {filtrosAtivos && !showFiltros && (
+            <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-orange-400" />
+          )}
+        </button>
       </div>
+
+      {/* Painel de filtros */}
+      {showFiltros && (
+        <div className="px-4 pb-3 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+          <div className="bg-card rounded-2xl p-3 space-y-3" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 15%)' }}>
+
+            {/* Tipo */}
+            <div>
+              <p className="text-[11px] text-muted-foreground font-medium mb-2">Tipo</p>
+              <div className="flex flex-wrap gap-1.5">
+                {['Todos', 'cartao', 'emprestimo', 'outros'].map(t => {
+                  const label = t === 'Todos' ? 'Todos' : t === 'cartao' ? 'Cartão' : t === 'emprestimo' ? 'Empréstimo' : 'Outros'
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => setFiltroTipo(t)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                        filtroTipo === t
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-secondary text-foreground border-border'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Status */}
+            <div>
+              <p className="text-[11px] text-muted-foreground font-medium mb-2">Status</p>
+              <div className="flex gap-1.5">
+                {[{ value: 'todos', label: 'Todos' }, { value: 'ativa', label: 'Em aberto' }, { value: 'quitada', label: 'Quitada' }].map(s => (
+                  <button
+                    key={s.value}
+                    onClick={() => setFiltroStatus(s.value)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                      filtroStatus === s.value
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-secondary text-foreground border-border'
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {filtrosAtivos && (
+              <button
+                onClick={() => { setFiltroTipo('Todos'); setFiltroStatus('todos') }}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X size={12} /> Limpar filtros
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Lista */}
       <div className="flex-1 overflow-y-auto px-4 pb-4">
@@ -130,17 +244,21 @@ export default function DividasPage() {
           <div className="space-y-2.5">
             {[1,2,3].map(i => <Skeleton key={i} className="h-20 w-full rounded-2xl" />)}
           </div>
-        ) : dividas.length === 0 ? (
+        ) : dividasFiltradas.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center mb-4">
               <CreditCard size={24} className="text-muted-foreground" />
             </div>
-            <p className="text-sm font-medium text-foreground/60">Nenhuma dívida</p>
-            <p className="text-xs text-muted-foreground mt-1">Adicione aqui ou pelo Chat</p>
+            <p className="text-sm font-medium text-foreground/60">
+              {filtrosAtivos ? 'Nenhuma dívida encontrada' : 'Nenhuma dívida'}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {filtrosAtivos ? 'Tente outros filtros' : 'Adicione aqui ou pelo Chat'}
+            </p>
           </div>
         ) : (
           <div className="space-y-2.5">
-            {dividas.map(d => {
+            {dividasFiltradas.map(d => {
               const restante = Number(d.valor_total) - Number(d.valor_pago)
               const pct = Math.min((Number(d.valor_pago) / Number(d.valor_total)) * 100, 100)
               return (
@@ -159,18 +277,24 @@ export default function DividasPage() {
                         {d.credor && <p className="text-[11px] text-muted-foreground mt-0.5">{d.credor}</p>}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-right">
+                    <div className="flex items-center gap-1.5">
+                      <div className="text-right mr-1">
                         <p className="text-[10px] text-muted-foreground">Restante</p>
                         <p className="font-bold text-destructive text-sm">R$ {restante.toFixed(2).replace('.', ',')}</p>
                       </div>
                       <button
+                        onClick={() => abrirEditar(d)}
+                        className="text-muted-foreground hover:text-primary transition-colors p-1"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
                         onClick={() => {
                           if (window.confirm('Tem certeza que quer apagar esta dívida?')) removerDivida(d.id)
                         }}
-                        className="text-muted-foreground hover:text-destructive transition-colors p-1 ml-1"
+                        className="text-muted-foreground hover:text-destructive transition-colors p-1"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   </div>
@@ -203,9 +327,9 @@ export default function DividasPage() {
         )}
       </div>
 
-      {/* Modal Nova Dívida */}
+      {/* Modal Dívida */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/75 flex items-end justify-center z-50" onClick={() => setShowForm(false)}>
+        <div className="fixed inset-0 bg-black/75 flex items-end justify-center z-50" onClick={fecharForm}>
           <div
             className="bg-card rounded-t-3xl w-full max-w-lg p-5 pb-8 space-y-4 max-h-[90vh] overflow-y-auto"
             style={{ boxShadow: '0 -4px 30px oklch(0 0 0 / 40%)' }}
@@ -213,7 +337,10 @@ export default function DividasPage() {
           >
             <div className="w-10 h-1 bg-border rounded-full mx-auto mb-1" />
             <h2 className="text-base font-bold flex items-center gap-2">
-              <Plus size={18} className="text-primary" /> Nova Dívida
+              {editandoId
+                ? <><Pencil size={16} className="text-primary" /> Editar Dívida</>
+                : <><Plus size={18} className="text-primary" /> Nova Dívida</>
+              }
             </h2>
 
             <div>
@@ -307,7 +434,7 @@ export default function DividasPage() {
 
             <div className="flex gap-3 pt-1">
               <button
-                onClick={() => setShowForm(false)}
+                onClick={fecharForm}
                 className="flex-1 bg-secondary text-foreground rounded-xl py-3.5 text-sm font-medium active:scale-[0.98] transition-transform"
               >
                 Cancelar
@@ -317,7 +444,7 @@ export default function DividasPage() {
                 disabled={salvando}
                 className="flex-1 bg-primary text-primary-foreground rounded-xl py-3.5 text-sm font-semibold disabled:opacity-50 active:scale-[0.98] transition-transform"
               >
-                {salvando ? 'Salvando...' : 'Salvar'}
+                {salvando ? 'Salvando...' : editandoId ? 'Atualizar' : 'Salvar'}
               </button>
             </div>
           </div>
