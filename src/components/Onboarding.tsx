@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, HandshakeIcon } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 
 interface OnboardingProps {
   onConcluir: (nome: string) => void
@@ -16,80 +16,97 @@ export default function Onboarding({ onConcluir }: OnboardingProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-background flex flex-col items-center justify-center p-6 z-[100]">
-      {/* Indicadores de passo */}
-      <div className="flex gap-2 mb-10">
+    <div className="fixed inset-0 bg-background flex flex-col items-center justify-between p-8 z-[100]">
+      {/* Progress dots */}
+      <div className="flex gap-2 mt-4">
         {[1, 2, 3].map(p => (
           <div
             key={p}
-            className={`h-1.5 rounded-full transition-all ${p === passo ? 'w-8 bg-primary' : p < passo ? 'w-4 bg-primary/50' : 'w-4 bg-secondary'}`}
+            className={`h-1 rounded-full transition-all duration-300 ${
+              p === passo ? 'w-8 bg-primary' : p < passo ? 'w-4 bg-primary/40' : 'w-4 bg-secondary'
+            }`}
           />
         ))}
       </div>
 
-      {/* Passo 1 — Apresentação */}
-      {passo === 1 && (
-        <div className="flex flex-col items-center text-center space-y-6 max-w-xs">
-          <div
-            className="w-24 h-24 rounded-full flex items-center justify-center"
-            style={{ backgroundColor: 'oklch(0.50 0.17 155)' }}
-          >
-            <HandshakeIcon size={44} className="text-white" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Tá Contato</h1>
-            <p className="text-muted-foreground mt-2 text-base">Seu dinheiro organizado com IA</p>
-          </div>
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            Registre gastos, receitas e dívidas conversando. Sem complicação.
-          </p>
-        </div>
-      )}
+      {/* Conteúdo central */}
+      <div className="flex flex-col items-center text-center space-y-6 max-w-xs w-full flex-1 justify-center">
 
-      {/* Passo 2 — Nome */}
-      {passo === 2 && (
-        <div className="flex flex-col items-center text-center space-y-6 max-w-xs w-full">
-          <div className="text-5xl">👋</div>
-          <div>
-            <h2 className="text-2xl font-bold text-foreground">Como posso te chamar?</h2>
-            <p className="text-muted-foreground mt-2 text-sm">Para deixar tudo mais pessoal!</p>
-          </div>
-          <input
-            type="text"
-            placeholder="Seu nome aqui..."
-            value={nome}
-            onChange={e => setNome(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && avancar()}
-            autoFocus
-            className="w-full bg-secondary text-foreground placeholder:text-muted-foreground rounded-xl px-4 py-3 text-base outline-none border border-border focus:border-primary transition-colors text-center"
-          />
-        </div>
-      )}
-
-      {/* Passo 3 — Pronto */}
-      {passo === 3 && (
-        <div className="flex flex-col items-center text-center space-y-6 max-w-xs">
-          <div className="text-6xl">🎉</div>
-          <div>
-            <h2 className="text-2xl font-bold text-foreground">
-              Tudo pronto{nome ? `, ${nome}` : ''}!
-            </h2>
-            <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-              Agora é só começar a registrar seus gastos e receitas pelo chat.
+        {/* Passo 1 — Apresentação */}
+        {passo === 1 && (
+          <>
+            <div
+              className="w-24 h-24 rounded-3xl overflow-hidden"
+              style={{ boxShadow: '0 8px 32px oklch(0.62 0.18 162 / 40%)' }}
+            >
+              <img
+                src="https://pub-c0bfb119504542e0b2e6ebc8f6b3b1df.r2.dev/user-uploads/user_37oySykXrlZ5YXKyzjL0vXOVtjM/9e3294a7-c91c-4fdf-98f5-fc3099336a6e.png"
+                alt="Tá Contato"
+                className="w-full h-full object-cover"
+                onError={e => {
+                  const el = e.target as HTMLImageElement
+                  el.style.display = 'none'
+                  const p = el.parentElement!
+                  p.style.background = 'oklch(0.48 0.16 162)'
+                  p.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-weight:800;font-size:32px;color:white;font-family:Poppins,Inter,sans-serif;letter-spacing:1px">TC</span>'
+                }}
+              />
+            </div>
+            <div>
+              <h1 className="text-3xl font-display font-bold text-foreground leading-tight">Tá Contato</h1>
+              <p className="text-base text-muted-foreground mt-2">Seu dinheiro organizado com IA</p>
+            </div>
+            <p className="text-sm text-muted-foreground leading-relaxed max-w-[240px]">
+              Registre gastos, receitas e dívidas conversando — sem complicação.
             </p>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+
+        {/* Passo 2 — Nome */}
+        {passo === 2 && (
+          <>
+            <div className="text-5xl leading-none">👋</div>
+            <div>
+              <h2 className="text-2xl font-display font-bold text-foreground">Como posso te chamar?</h2>
+              <p className="text-sm text-muted-foreground mt-2">Para deixar a experiência mais pessoal!</p>
+            </div>
+            <input
+              type="text"
+              placeholder="Seu nome aqui..."
+              value={nome}
+              onChange={e => setNome(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && avancar()}
+              autoFocus
+              className="w-full bg-secondary text-foreground placeholder:text-muted-foreground rounded-2xl px-5 py-4 text-base outline-none border border-border focus:border-primary transition-colors text-center font-medium"
+            />
+          </>
+        )}
+
+        {/* Passo 3 — Pronto */}
+        {passo === 3 && (
+          <>
+            <div className="text-6xl leading-none">🎉</div>
+            <div>
+              <h2 className="text-2xl font-display font-bold text-foreground">
+                Tudo pronto{nome ? `, ${nome}` : ''}!
+              </h2>
+              <p className="text-sm text-muted-foreground mt-2 leading-relaxed max-w-[240px]">
+                Agora é só começar. Use o chat para registrar gastos e receitas com facilidade.
+              </p>
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Botão de avançar */}
       <button
         onClick={avancar}
         disabled={passo === 2 && !nome.trim()}
-        className="mt-10 flex items-center gap-2 px-8 py-3.5 rounded-2xl font-semibold text-white transition-opacity disabled:opacity-40"
-        style={{ backgroundColor: 'oklch(0.50 0.17 155)' }}
+        className="w-full max-w-xs flex items-center justify-center gap-2 py-4 rounded-2xl font-semibold text-white text-base transition-all disabled:opacity-40 active:scale-[0.98] mb-4"
+        style={{ backgroundColor: 'oklch(0.62 0.18 162)', boxShadow: '0 4px 20px oklch(0.62 0.18 162 / 40%)' }}
       >
         {passo === 3 ? 'Começar' : 'Próximo'}
-        <ChevronRight size={18} />
+        <ChevronRight size={20} strokeWidth={2.5} />
       </button>
     </div>
   )

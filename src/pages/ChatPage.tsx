@@ -1,15 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
-import { Mic, Send, WifiOff } from 'lucide-react'
-
-const BOTOES_RAPIDOS = [
-  { label: '💸 Gasto', exemplo: 'Almoço 25 reais' },
-  { label: '💰 Recebi', exemplo: 'Recebi 3000 de salário' },
-  { label: '📊 Resumo', exemplo: 'Resumo do mês' },
-  { label: '💳 Dívidas', exemplo: 'Devo 800 no Nubank' },
-]
+import { Mic, Send, WifiOff, TrendingDown, TrendingUp, BarChart2, CreditCard } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+
+const BOTOES_RAPIDOS = [
+  { label: 'Gasto', Icon: TrendingDown, exemplo: 'Almoço 25 reais', color: 'text-destructive' },
+  { label: 'Recebi', Icon: TrendingUp, exemplo: 'Recebi 3000 de salário', color: 'text-primary' },
+  { label: 'Resumo', Icon: BarChart2, exemplo: 'Resumo do mês', color: 'text-blue-400' },
+  { label: 'Dívida', Icon: CreditCard, exemplo: 'Devo 800 no Nubank', color: 'text-orange-400' },
+]
 
 interface Mensagem {
   id: string
@@ -21,23 +21,15 @@ interface Mensagem {
 const MSG_INICIAL: Mensagem = {
   id: '0',
   tipo: 'assistente',
-  conteudo: `Olá! 👋 Bem-vindo ao Tá Contato!\n\nMe conta teus gastos, receitas e dívidas como mensagem:\n\n💸 "Almoço 25 reais"\n💰 "Recebi 3 mil de freela"\n💳 "Devo 800 no Nubank"\n📊 "Como foi abril?"\n\nDigite ou use o 🎤 microfone!`,
+  conteudo: `Olá! Bem-vindo ao Tá Contato!\n\nMe conta teus gastos, receitas e dívidas:\n\n"Almoço 25 reais"\n"Recebi 3 mil de freela"\n"Devo 800 no Nubank"\n"Como foi abril?"\n\nUse os botões abaixo ou o microfone!`,
   timestamp: new Date(),
 }
 
-// Regex para detectar receitas (verificado antes dos gastos)
 const REGEX_RECEITA = /(?:recebi|ganhei|entrou|freela|salário|pagamento|venda)\s*(?:de\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
-
-// Regex para detectar dívidas
 const REGEX_DIVIDA = /(?:devo|tenho\s+(?:uma\s+)?dívida|cartão|financiamento|empréstimo)\s*(?:de\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
-
-// Regex para detectar gastos com palavras-chave explícitas
 const REGEX_GASTO_KEYWORDS = /(?:gastei|paguei|comprei|almoço|lanche|café|jantar|gasolina|uber|ônibus|metrô|ifood|mercado|supermercado|farmácia|remédio|médico|cinema|bar|show|netflix|spotify|roupa|sapato|celular|eletrônico|aluguel|luz|água|internet|gás|curso|livro|escola)\s*[a-zA-Zçãõéíóúàèìòùâêîôûäëïöü]*\s*(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
-
-// Regex genérico "descricao + valor" como fallback de gasto
 const REGEX_GASTO_GENERICO = /^(.+?)\s+(\d+(?:[.,]\d{1,2})?)(?:\s+reais?)?$/i
 
-// Detecta a categoria do gasto com base na descrição
 function detectarCategoria(texto: string): string {
   const t = texto.toLowerCase()
   if (/almoço|lanche|café|jantar|restaurante|ifood|delivery|mercado|supermercado|padaria|açougue|feira|doce|sorvete|pizza|hamburguer|sushi/.test(t)) return 'Alimentação'
@@ -62,60 +54,54 @@ function parseComando(
   const t = texto.toLowerCase().trim()
   const hoje = new Date().toISOString().split('T')[0]
 
-  // 1. Resumo/Consulta — prioridade máxima
   if (t.includes('resumo') || t.includes('como foi') || t.includes('saldo') || t.includes('total') || t.includes('quanto')) {
     const saldo = totalReceitas - totalGastos
-    return `📊 **Seu resumo atual:**\n\n💸 Total de gastos: R$ ${totalGastos.toFixed(2).replace('.', ',')}\n💰 Total de receitas: R$ ${totalReceitas.toFixed(2).replace('.', ',')}\n💳 Dívidas restantes: R$ ${totalDividas.toFixed(2).replace('.', ',')}\n\n💡 Saldo: R$ ${saldo.toFixed(2).replace('.', ',')}`
+    return `Seu resumo atual:\n\nGastos: R$ ${totalGastos.toFixed(2).replace('.', ',')}\nReceitas: R$ ${totalReceitas.toFixed(2).replace('.', ',')}\nDívidas: R$ ${totalDividas.toFixed(2).replace('.', ',')}\n\nSaldo: R$ ${saldo.toFixed(2).replace('.', ',')}`
   }
 
-  // 2. Receita — checar antes dos gastos (evita "aluguel recebido" virar gasto)
   const matchReceita = t.match(REGEX_RECEITA)
   if (matchReceita) {
     const valor = parseFloat(matchReceita[1].replace(',', '.'))
     if (valor > 0) {
       adicionarReceita({ descricao: texto.trim(), categoria: 'Outros', valor, tipo: 'recebido', data: hoje })
-      return `✅ Receita de R$ ${valor.toFixed(2).replace('.', ',')} registrada! 💰`
+      return `Receita de R$ ${valor.toFixed(2).replace('.', ',')} registrada!`
     }
   }
 
-  // 3. Dívida
   const matchDivida = t.match(REGEX_DIVIDA)
   if (matchDivida) {
     const valor = parseFloat(matchDivida[1].replace(',', '.'))
     if (valor > 0) {
       adicionarDivida({ nome: texto.trim(), tipo: 'outros', valor_total: valor, valor_pago: 0, parcelado: false })
-      return `✅ Dívida de R$ ${valor.toFixed(2).replace('.', ',')} registrada! 💳`
+      return `Dívida de R$ ${valor.toFixed(2).replace('.', ',')} registrada!`
     }
   }
 
-  // 4. Gasto com palavra-chave explícita (almoço, gasolina, etc)
   const matchGastoKw = t.match(REGEX_GASTO_KEYWORDS)
   if (matchGastoKw) {
     const valor = parseFloat(matchGastoKw[1].replace(',', '.'))
     if (valor > 0) {
       const categoria = detectarCategoria(texto)
       adicionarGasto({ descricao: texto.trim(), valor, categoria, data: hoje })
-      return `✅ Gasto de R$ ${valor.toFixed(2).replace('.', ',')} registrado em **${categoria}**! 💸`
+      return `Gasto de R$ ${valor.toFixed(2).replace('.', ',')} registrado em ${categoria}!`
     }
   }
 
-  // 5. Fallback genérico: "descricao valor"
   const matchGenerico = t.match(REGEX_GASTO_GENERICO)
   if (matchGenerico) {
     const valor = parseFloat(matchGenerico[2].replace(',', '.'))
     if (valor > 0 && valor < 100000) {
       const categoria = detectarCategoria(texto)
       adicionarGasto({ descricao: texto.trim(), valor, categoria, data: hoje })
-      return `✅ Gasto de R$ ${valor.toFixed(2).replace('.', ',')} registrado em **${categoria}**! 💸`
+      return `Gasto de R$ ${valor.toFixed(2).replace('.', ',')} registrado em ${categoria}!`
     }
   }
 
-  // Texto sem nenhum número — pedir valor
   if (/[a-zA-ZÀ-ú]/.test(t) && !/\d/.test(t)) {
-    return `🤔 Qual o valor? Por exemplo:\n"${texto.trim()} 50 reais"`
+    return `Qual o valor? Por exemplo:\n"${texto.trim()} 50 reais"`
   }
 
-  return `🤔 Não entendi muito bem. Tente:\n• "Almoço 25 reais"\n• "Recebi 3000 de freela"\n• "Devo 500 no cartão"\n• "Resumo do mês"`
+  return `Não entendi. Tente:\n• "Almoço 25 reais"\n• "Recebi 3000 de freela"\n• "Devo 500 no cartão"\n• "Resumo do mês"`
 }
 
 export default function ChatPage() {
@@ -133,6 +119,7 @@ export default function ChatPage() {
     window.addEventListener('offline', off)
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
   }, [])
+
   const { adicionarGasto, adicionarReceita, adicionarDivida, totalGastos, totalReceitas, totalDividas } = useApp()
 
   useEffect(() => {
@@ -152,7 +139,6 @@ export default function ChatPage() {
     setMensagens(prev => [...prev, msgUsuario])
     setInput('')
 
-    // Captura os valores atuais sincronamente antes do setTimeout
     const resposta = parseComando(
       texto, adicionarGasto, adicionarReceita, adicionarDivida,
       totalGastos, totalReceitas, totalDividas
@@ -192,24 +178,48 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Banner offline */}
       {offline && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-destructive/15 border-b border-destructive/30 text-destructive text-xs font-medium">
-          <WifiOff size={13} /> Sem conexão, tente novamente
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-destructive/12 border-b border-destructive/20 text-destructive text-xs font-medium">
+          <WifiOff size={13} /> Sem conexão — tente novamente
         </div>
       )}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+
+      {/* Mensagens */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
         {mensagens.map(msg => (
           <div key={msg.id} className={`flex ${msg.tipo === 'usuario' ? 'justify-end' : 'justify-start'}`}>
+            {msg.tipo === 'assistente' && (
+              <div className="w-7 h-7 rounded-xl overflow-hidden shrink-0 mr-2 mt-0.5">
+                <img
+                  src="https://pub-c0bfb119504542e0b2e6ebc8f6b3b1df.r2.dev/user-uploads/user_37oySykXrlZ5YXKyzjL0vXOVtjM/9e3294a7-c91c-4fdf-98f5-fc3099336a6e.png"
+                  alt="TC"
+                  className="w-full h-full object-cover"
+                  onError={e => {
+                    const el = e.target as HTMLImageElement
+                    el.style.display = 'none'
+                    const p = el.parentElement!
+                    p.style.background = 'oklch(0.48 0.16 162)'
+                    p.innerHTML = '<span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:10px;font-weight:800;color:white;font-family:Poppins,sans-serif">TC</span>'
+                  }}
+                />
+              </div>
+            )}
             <div
-              className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+              className={`max-w-[80%] rounded-2xl px-4 py-3 ${
                 msg.tipo === 'usuario'
-                  ? 'bg-primary text-primary-foreground rounded-br-sm'
-                  : 'bg-card text-foreground rounded-bl-sm'
+                  ? 'rounded-br-md text-primary-foreground'
+                  : 'rounded-bl-md text-foreground'
               }`}
+              style={
+                msg.tipo === 'usuario'
+                  ? { backgroundColor: 'oklch(0.48 0.16 162)', boxShadow: '0 2px 10px oklch(0.48 0.16 162 / 30%)' }
+                  : { backgroundColor: 'oklch(0.16 0.012 250)', boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' }
+              }
             >
               <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.conteudo}</p>
-              <p className="text-xs mt-1 opacity-50 text-right">
-                {format(msg.timestamp, "d 'de' MMM., HH:mm", { locale: ptBR })}
+              <p className="text-[10px] mt-1.5 opacity-40 text-right">
+                {format(msg.timestamp, "HH:mm", { locale: ptBR })}
               </p>
             </div>
           </div>
@@ -217,15 +227,17 @@ export default function ChatPage() {
         <div ref={bottomRef} />
       </div>
 
-      <div className="p-3 border-t border-border">
+      {/* Input area */}
+      <div className="px-4 py-3 border-t" style={{ borderColor: 'oklch(1 0 0 / 7%)' }}>
         {/* Botões rápidos */}
-        <div className="flex gap-1.5 mb-2 overflow-x-auto pb-0.5">
+        <div className="flex gap-1.5 mb-3 overflow-x-auto">
           {BOTOES_RAPIDOS.map(b => (
             <button
               key={b.label}
               onClick={() => { setInput(b.exemplo); setTimeout(() => inputRef.current?.focus(), 50) }}
-              className="shrink-0 bg-secondary text-foreground text-xs rounded-full px-3 py-1.5 border border-border hover:border-primary hover:text-primary transition-colors"
+              className={`shrink-0 bg-secondary text-foreground text-[11px] rounded-full px-3 py-1.5 border border-border hover:border-primary transition-colors flex items-center gap-1.5 font-medium`}
             >
+              <b.Icon size={11} className={b.color} />
               {b.label}
             </button>
           ))}
@@ -235,10 +247,10 @@ export default function ChatPage() {
           <button
             onClick={toggleGravacao}
             className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-              gravando ? 'bg-destructive text-white' : 'bg-secondary text-foreground'
+              gravando ? 'bg-destructive text-white' : 'bg-secondary text-muted-foreground hover:text-foreground'
             }`}
           >
-            <Mic size={18} />
+            <Mic size={17} />
           </button>
           <input
             ref={inputRef}
@@ -246,14 +258,15 @@ export default function ChatPage() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKey}
-            placeholder="Gasto, receita, dívida ou resumo..."
+            placeholder="Gasto, receita, dívida..."
             className="flex-1 bg-secondary text-foreground placeholder:text-muted-foreground rounded-full px-4 py-2.5 text-sm outline-none border border-border focus:border-primary transition-colors"
           />
           <button
             onClick={enviar}
-            className="w-11 h-11 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0"
+            className="w-11 h-11 rounded-full text-primary-foreground flex items-center justify-center shrink-0 active:scale-95 transition-transform"
+            style={{ backgroundColor: 'oklch(0.62 0.18 162)' }}
           >
-            <Send size={18} />
+            <Send size={17} />
           </button>
         </div>
       </div>
