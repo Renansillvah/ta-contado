@@ -67,7 +67,7 @@ function calcularSaude(saldo: number, ganhos: number, totalDividas: number, gast
 }
 
 export default function ResumoPage() {
-  const { gastos, receitas, dividas, totalDividas, loading } = useApp()
+  const { gastos, receitas, totalDividas, loading } = useApp()
 
   const MES_ATUAL = format(new Date(), 'yyyy-MM')
   const MES_LABEL = format(new Date(), "MMMM 'de' yyyy", { locale: ptBR }).replace(/^\w/, c => c.toUpperCase())
@@ -87,7 +87,6 @@ export default function ResumoPage() {
       .reduce((s, g) => s + Number(g.valor), 0), [gastos, MES_ATUAL])
 
   const saldoReal = ganhosMes - gastosMes
-  const saldoPrevisto = ganhosMes + aReceberMes - gastosMes
   const pctGasto = ganhosMes > 0 ? Math.min((gastosMes / ganhosMes) * 100, 100) : 0
 
   // ── Saúde financeira ─────────────────────────────────────────────────────────
