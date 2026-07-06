@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react'
-import { Plus, Trash2, Pencil, Package, AlertTriangle, Clock, AlertCircle, CreditCard, CheckCircle2, SlidersHorizontal, X, TrendingDown } from 'lucide-react'
+import { useState, useMemo, useRef } from 'react'
+import { Plus, Pencil, Package, AlertTriangle, Clock, AlertCircle, CreditCard, CheckCircle2, SlidersHorizontal, X, TrendingDown, ChevronRight } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { Skeleton } from '@/components/ui/skeleton'
-import { differenceInDays, parseISO } from 'date-fns'
+import { differenceInDays, parseISO, format } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 
 interface FormDivida {
   nome: string
@@ -37,6 +38,10 @@ const FORM_VAZIO: FormDivida = {
   credor: '', vencimento: '', parcelado: false, parcelas: '',
 }
 
+function fmtBRL(v: number) {
+  return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 export default function DividasPage() {
   const { dividas, adicionarDivida, removerDivida, pagarDivida, atualizarDivida, loading } = useApp()
   const [showForm, setShowForm] = useState(false)
@@ -44,21 +49,26 @@ export default function DividasPage() {
   const [showFiltros, setShowFiltros] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState('Todos')
   const [filtroStatus, setFiltroStatus] = useState('todos')
-  const [showPagamento, setShowPagamento] = useState<string | null>(null)
+  const [pagandoId, setPagandoId] = useState<string | null>(null)
   const [valorPagamento, setValorPagamento] = useState('')
+  const [confirmandoId, setConfirmandoId] = useState<string | null>(null)
   const [form, setForm] = useState<FormDivida>(FORM_VAZIO)
   const [salvando, setSalvando] = useState(false)
+  const inputPagamentoRef = useRef<HTMLInputElement>(null)
 
   const hoje = new Date()
 
-  // Totais gerais
   const totalDivido = useMemo(() => dividas.reduce((s, d) => s + Number(d.valor_total), 0), [dividas])
   const totalPago = useMemo(() => dividas.reduce((s, d) => s + Number(d.valor_pago), 0), [dividas])
   const totalRestante = totalDivido - totalPago
   const pctGeral = totalDivido > 0 ? Math.min((totalPago / totalDivido) * 100, 100) : 0
   const dividasAbertas = dividas.filter(d => Number(d.valor_total) - Number(d.valor_pago) > 0).length
 
-  // Alertas de vencimento
+  const temVencidas = useMemo(() =>
+    dividas.some(d => d.vencimento && Number(d.valor_total) > Number(d.valor_pago) && differenceInDays(parseISO(d.vencimento), hoje) < 0),
+    [dividas]
+  )
+
   const alertas = useMemo(() => {
     return dividas
       .filter(d => d.vencimento && Number(d.valor_total) > Number(d.valor_pago))
@@ -67,8 +77,9 @@ export default function DividasPage() {
       .sort((a, b) => a.diff - b.diff)
   }, [dividas])
 
+  // Ordenação: vencidas → urgentes (≤3d) → abertas por vencimento → quitadas
   const dividasFiltradas = useMemo(() => {
-    return dividas.filter(d => {
+    const lista = dividas.filter(d => {
       const tipoOk = filtroTipo === 'Todos' || d.tipo === filtroTipo
       const restante = Number(d.valor_total) - Number(d.valor_pago)
       const statusOk =
@@ -76,6 +87,22 @@ export default function DividasPage() {
         (filtroStatus === 'ativa' && restante > 0) ||
         (filtroStatus === 'quitada' && restante <= 0)
       return tipoOk && statusOk
+    })
+
+    return lista.sort((a, b) => {
+      const restA = Number(a.valor_total) - Number(a.valor_pago)
+      const restB = Number(b.valor_total) - Number(b.valor_pago)
+      const qA = restA <= 0
+      const qB = restB <= 0
+
+      // Quitadas sempre por último
+      if (qA && !qB) return 1
+      if (!qA && qB) return -1
+
+      // Ambas em aberto: ordena por urgência de vencimento
+      const diffA = a.vencimento ? differenceInDays(parseISO(a.vencimento), hoje) : 999
+      const diffB = b.vencimento ? differenceInDays(parseISO(b.vencimento), hoje) : 999
+      return diffA - diffB
     })
   }, [dividas, filtroTipo, filtroStatus])
 
@@ -110,7 +137,6 @@ export default function DividasPage() {
       const valorPagoAtual = parseFloat(form.valor_pago_atual.replace(',', '.') || '0') || 0
 
       if (editandoId) {
-        // Atualiza sem perder valor_pago — FIX DO BUG
         await atualizarDivida(editandoId, {
           nome: form.nome,
           tipo: form.tipo,
@@ -140,26 +166,55 @@ export default function DividasPage() {
     }
   }
 
-  const registrarPagamento = async () => {
-    if (!showPagamento || !valorPagamento) return
-    await pagarDivida(showPagamento, parseFloat(valorPagamento.replace(',', '.')))
-    setShowPagamento(null)
+  const abrirPagamento = (d: any) => {
+    setPagandoId(d.id)
+    setValorPagamento('')
+    setTimeout(() => inputPagamentoRef.current?.focus(), 100)
+  }
+
+  const registrarPagamento = async (quitarTudo?: boolean) => {
+    if (!pagandoId) return
+    const divida = dividas.find(d => d.id === pagandoId)
+    if (!divida) return
+
+    const restante = Number(divida.valor_total) - Number(divida.valor_pago)
+    const valor = quitarTudo ? restante : parseFloat(valorPagamento.replace(',', '.'))
+    if (!valor || valor <= 0) return
+
+    await pagarDivida(pagandoId, valor)
+    setPagandoId(null)
     setValorPagamento('')
   }
+
+  const dividaPagando = dividas.find(d => d.id === pagandoId)
+  const restantePagando = dividaPagando
+    ? Number(dividaPagando.valor_total) - Number(dividaPagando.valor_pago)
+    : 0
 
   return (
     <div className="flex flex-col h-full">
 
-      {/* Card de progresso geral */}
+      {/* Card progresso geral */}
       {dividas.length > 0 && (
         <div className="px-4 pt-4 pb-0">
-          <div className="bg-card rounded-2xl p-4 mb-3" style={{ boxShadow: '0 1px 12px oklch(0 0 0 / 20%)' }}>
+          <div
+            className="rounded-2xl p-4 mb-3 transition-colors duration-300"
+            style={{
+              boxShadow: '0 1px 12px oklch(0 0 0 / 20%)',
+              background: temVencidas
+                ? 'oklch(0.22 0.07 15)'
+                : 'var(--card)',
+              border: temVencidas ? '1px solid oklch(0.55 0.22 15 / 35%)' : 'none',
+            }}
+          >
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-destructive/15 flex items-center justify-center">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${temVencidas ? 'bg-destructive/20' : 'bg-destructive/15'}`}>
                   <TrendingDown size={14} className="text-destructive" />
                 </div>
-                <span className="text-xs font-semibold text-foreground">Progresso das dívidas</span>
+                <span className="text-xs font-semibold text-foreground">
+                  {temVencidas ? 'Atenção: há dívidas vencidas' : 'Progresso das dívidas'}
+                </span>
               </div>
               <span className="text-[11px] text-muted-foreground">{dividasAbertas} em aberto</span>
             </div>
@@ -279,7 +334,7 @@ export default function DividasPage() {
       {/* Lista */}
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         {loading ? (
-          <div className="space-y-2.5">{[1,2,3].map(i => <Skeleton key={i} className="h-20 w-full rounded-2xl" />)}</div>
+          <div className="space-y-2.5">{[1,2,3].map(i => <Skeleton key={i} className="h-24 w-full rounded-2xl" />)}</div>
         ) : dividasFiltradas.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center mb-4">
@@ -294,6 +349,38 @@ export default function DividasPage() {
               const restante = Number(d.valor_total) - Number(d.valor_pago)
               const pct = Math.min((Number(d.valor_pago) / Number(d.valor_total)) * 100, 100)
               const quitada = restante <= 0
+              const diff = d.vencimento ? differenceInDays(parseISO(d.vencimento), hoje) : null
+              const vencida = diff !== null && diff < 0 && !quitada
+              const urgente = diff !== null && diff >= 0 && diff <= 3 && !quitada
+
+              // Confirmação de apagar inline
+              if (confirmandoId === d.id) {
+                return (
+                  <div
+                    key={d.id}
+                    className="rounded-2xl p-4 border border-destructive/40 animate-in fade-in duration-150"
+                    style={{ background: 'oklch(0.20 0.06 15)' }}
+                  >
+                    <p className="text-sm font-semibold text-foreground mb-0.5">Apagar "{d.nome}"?</p>
+                    <p className="text-xs text-muted-foreground mb-3">Esta ação não pode ser desfeita.</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setConfirmandoId(null)}
+                        className="flex-1 bg-secondary text-foreground rounded-xl py-2.5 text-xs font-medium"
+                      >
+                        Não
+                      </button>
+                      <button
+                        onClick={() => { removerDivida(d.id); setConfirmandoId(null) }}
+                        className="flex-1 bg-destructive text-white rounded-xl py-2.5 text-xs font-semibold"
+                      >
+                        Apagar
+                      </button>
+                    </div>
+                  </div>
+                )
+              }
+
               return (
                 <div
                   key={d.id}
@@ -302,62 +389,94 @@ export default function DividasPage() {
                     boxShadow: '0 1px 10px oklch(0 0 0 / 18%)',
                     background: quitada
                       ? 'oklch(0.22 0.06 162)'
+                      : vencida ? 'oklch(0.21 0.06 15)'
                       : 'var(--card)',
-                    border: quitada ? '1px solid oklch(0.62 0.18 162 / 30%)' : 'none',
+                    border: quitada
+                      ? '1px solid oklch(0.62 0.18 162 / 30%)'
+                      : vencida ? '1px solid oklch(0.55 0.22 15 / 30%)'
+                      : 'none',
                   }}
                 >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${quitada ? 'bg-primary/20' : 'bg-secondary'}`}>
+                  {/* Linha 1: ícone + nome + ações */}
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${quitada ? 'bg-primary/20' : vencida ? 'bg-destructive/20' : 'bg-secondary'}`}>
                         {quitada
                           ? <CheckCircle2 size={15} className="text-primary" />
                           : <TipoEmoji tipo={d.tipo} />
                         }
                       </div>
-                      <div>
-                        <p className={`font-semibold text-sm leading-tight ${quitada ? 'line-through text-muted-foreground' : 'text-foreground'}`}>{d.nome}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          {d.credor && <p className="text-[11px] text-muted-foreground">{d.credor}</p>}
-                          {quitada && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary font-medium">Quitada ✓</span>}
+                      <div className="min-w-0 flex-1">
+                        <p className={`font-semibold text-sm leading-tight truncate ${quitada ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+                          {d.nome}
+                        </p>
+                        {/* Meta-info: credor, vencimento, parcelas */}
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {d.credor && (
+                            <span className="text-[11px] text-muted-foreground">{d.credor}</span>
+                          )}
+                          {d.vencimento && !quitada && (
+                            <span className={`text-[11px] font-medium ${vencida ? 'text-destructive' : urgente ? 'text-orange-400' : 'text-muted-foreground'}`}>
+                              {vencida
+                                ? `Venceu ${format(parseISO(d.vencimento), 'dd/MM', { locale: ptBR })}`
+                                : diff === 0 ? 'Vence hoje'
+                                : `Vence ${format(parseISO(d.vencimento), 'dd/MM', { locale: ptBR })}`
+                              }
+                            </span>
+                          )}
+                          {d.parcelado && d.parcelas && (
+                            <span className="text-[11px] text-muted-foreground">
+                              {d.parcela_atual ?? 0}/{d.parcelas}x
+                            </span>
+                          )}
+                          {quitada && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary font-medium">Quitada ✓</span>
+                          )}
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
+
+                    {/* Valor + ações */}
+                    <div className="flex items-center gap-1 ml-2 shrink-0">
                       <div className="text-right mr-1">
                         <p className="text-[10px] text-muted-foreground">{quitada ? 'Quitada' : 'Restante'}</p>
-                        <p className={`font-bold text-sm ${quitada ? 'text-primary' : 'text-destructive'}`}>
-                          {quitada ? '✓' : `R$ ${restante.toFixed(2).replace('.', ',')}`}
+                        <p className={`font-bold text-sm ${quitada ? 'text-primary' : vencida ? 'text-destructive' : 'text-destructive'}`}>
+                          {quitada ? '✓' : `R$ ${fmtBRL(restante)}`}
                         </p>
                       </div>
                       <button onClick={() => abrirEditar(d)} className="text-muted-foreground hover:text-primary transition-colors p-1">
                         <Pencil size={13} />
                       </button>
                       <button
-                        onClick={() => { if (window.confirm('Apagar esta dívida?')) removerDivida(d.id) }}
+                        onClick={() => setConfirmandoId(d.id)}
                         className="text-muted-foreground hover:text-destructive transition-colors p-1"
                       >
-                        <Trash2 size={13} />
+                        <X size={13} />
                       </button>
                     </div>
                   </div>
 
-                  {/* Barra de progresso */}
-                  <div className="h-1.5 bg-secondary rounded-full overflow-hidden mb-2">
-                    <div
-                      className={`h-full rounded-full transition-all duration-700 ${quitada ? 'bg-primary' : 'bg-primary'}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
+                  {/* Barra de progresso — só quando há pagamento parcial */}
+                  {pct > 0 && (
+                    <div className="h-1.5 bg-secondary rounded-full overflow-hidden mb-2">
+                      <div
+                        className="h-full rounded-full transition-all duration-700 bg-primary"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  )}
 
+                  {/* Linha 2: pago / total + botão Pagar */}
                   <div className="flex items-center justify-between">
                     <p className="text-[11px] text-muted-foreground">
-                      Pago: R$ {Number(d.valor_pago).toFixed(2).replace('.', ',')}
-                      <span className="text-muted-foreground/50"> / R$ {Number(d.valor_total).toFixed(2).replace('.', ',')}</span>
+                      Pago: R$ {fmtBRL(Number(d.valor_pago))}
+                      <span className="text-muted-foreground/50"> / R$ {fmtBRL(Number(d.valor_total))}</span>
                     </p>
                     {!quitada && (
                       <button
-                        onClick={() => setShowPagamento(d.id)}
-                        className="flex items-center gap-1 text-xs text-primary font-semibold"
+                        onClick={() => abrirPagamento(d)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-white transition-colors active:scale-95"
+                        style={{ backgroundColor: 'oklch(0.62 0.18 162)' }}
                       >
                         <CheckCircle2 size={12} /> Pagar
                       </button>
@@ -380,7 +499,10 @@ export default function DividasPage() {
           >
             <div className="w-10 h-1 bg-border rounded-full mx-auto mb-1" />
             <h2 className="text-base font-bold flex items-center gap-2">
-              {editandoId ? <><Pencil size={16} className="text-primary" /> Editar Dívida</> : <><Plus size={18} className="text-primary" /> Nova Dívida</>}
+              {editandoId
+                ? <><Pencil size={16} className="text-primary" /> Editar Dívida</>
+                : <><Plus size={18} className="text-primary" /> Nova Dívida</>
+              }
             </h2>
 
             <div>
@@ -463,25 +585,59 @@ export default function DividasPage() {
         </div>
       )}
 
-      {/* Modal Pagamento */}
-      {showPagamento && (
-        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4" onClick={() => setShowPagamento(null)}>
+      {/* Modal Pagamento — com contexto e "Quitar tudo" */}
+      {pagandoId && dividaPagando && (
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4" onClick={() => setPagandoId(null)}>
           <div className="bg-card rounded-2xl w-full max-w-sm p-5 space-y-4"
             style={{ boxShadow: '0 8px 40px oklch(0 0 0 / 50%)' }}
             onClick={e => e.stopPropagation()}>
-            <h2 className="text-base font-bold">Registrar Pagamento</h2>
+
+            {/* Contexto da dívida */}
+            <div>
+              <h2 className="text-base font-bold">Registrar Pagamento</h2>
+              <div className="flex items-center justify-between mt-2 bg-secondary rounded-xl px-3.5 py-2.5">
+                <div className="flex items-center gap-2">
+                  <TipoEmoji tipo={dividaPagando.tipo} />
+                  <span className="text-sm font-medium text-foreground truncate max-w-[130px]">{dividaPagando.nome}</span>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] text-muted-foreground">Restante</p>
+                  <p className="text-sm font-bold text-destructive">R$ {fmtBRL(restantePagando)}</p>
+                </div>
+              </div>
+            </div>
+
             <div>
               <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Valor pago (R$)</label>
-              <input type="number" placeholder="0,00" value={valorPagamento}
+              <input
+                ref={inputPagamentoRef}
+                type="number"
+                placeholder="0,00"
+                value={valorPagamento}
                 onChange={e => setValorPagamento(e.target.value)}
                 className="w-full bg-secondary rounded-xl px-4 py-3 text-sm outline-none border border-border focus:border-primary transition-colors"
-                autoFocus />
+              />
             </div>
+
+            {/* Quitar tudo */}
+            <button
+              onClick={() => registrarPagamento(true)}
+              className="w-full flex items-center justify-between rounded-xl px-4 py-3 border border-primary/30 bg-primary/8 text-sm font-medium text-primary active:scale-[0.98] transition-transform"
+            >
+              <span>Quitar tudo (R$ {fmtBRL(restantePagando)})</span>
+              <ChevronRight size={16} />
+            </button>
+
             <div className="flex gap-3">
-              <button onClick={() => setShowPagamento(null)}
+              <button onClick={() => setPagandoId(null)}
                 className="flex-1 bg-secondary text-foreground rounded-xl py-3 text-sm font-medium">Cancelar</button>
-              <button onClick={registrarPagamento}
-                className="flex-1 bg-primary text-primary-foreground rounded-xl py-3 text-sm font-semibold">Confirmar</button>
+              <button
+                onClick={() => registrarPagamento(false)}
+                disabled={!valorPagamento}
+                className="flex-1 bg-primary text-primary-foreground rounded-xl py-3 text-sm font-semibold disabled:opacity-40"
+              >
+                Confirmar
+              </button>
             </div>
           </div>
         </div>
