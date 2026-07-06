@@ -16,8 +16,10 @@ interface AppContextType {
   adicionarDivida: (d: Omit<Divida, 'id' | 'created_at'>) => Promise<void>
   removerDivida: (id: string) => Promise<void>
   pagarDivida: (id: string, valor: number) => Promise<void>
+  atualizarDivida: (id: string, dados: Partial<Omit<Divida, 'id' | 'created_at'>>) => Promise<void>
   adicionarReceita: (r: Omit<Receita, 'id' | 'created_at'>) => Promise<void>
   removerReceita: (id: string) => Promise<void>
+  marcarRecebido: (id: string) => Promise<void>
   recarregar: () => Promise<void>
 }
 
@@ -127,6 +129,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast.success('Pagamento registrado!')
   }
 
+  const atualizarDivida = async (id: string, dados: Partial<Omit<Divida, 'id' | 'created_at'>>) => {
+    const { error } = await supabase.from('dividas').update(dados).eq('id', id)
+    if (error) { toast.error('Erro ao atualizar dívida'); return }
+    setDividas(prev => prev.map(d => d.id === id ? { ...d, ...dados } : d))
+    toast.success('Dívida atualizada!')
+  }
+
   const adicionarReceita = async (r: Omit<Receita, 'id' | 'created_at'>) => {
     const { data, error } = await supabase.from('receitas').insert([r]).select().single()
     if (error) { toast.error('Erro ao salvar receita'); return }
@@ -141,13 +150,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast.success('Receita removida')
   }
 
+  const marcarRecebido = async (id: string) => {
+    const { error } = await supabase.from('receitas').update({ tipo: 'recebido' }).eq('id', id)
+    if (error) { toast.error('Erro ao atualizar'); return }
+    setReceitas(prev => prev.map(r => r.id === id ? { ...r, tipo: 'recebido' } : r))
+    toast.success('Receita marcada como recebida!')
+  }
+
   return (
     <AppContext.Provider value={{
       gastos, dividas, receitas, loading, supabaseOk,
       totalGastos, totalReceitas, totalDividas,
       adicionarGasto, removerGasto,
-      adicionarDivida, removerDivida, pagarDivida,
-      adicionarReceita, removerReceita,
+      adicionarDivida, removerDivida, pagarDivida, atualizarDivida,
+      adicionarReceita, removerReceita, marcarRecebido,
       recarregar: carregar,
     }}>
       {children}
