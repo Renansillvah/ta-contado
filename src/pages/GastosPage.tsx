@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Plus, Trash2, UtensilsCrossed, Car, Home, Heart, Smile, ShoppingBag, BookOpen, Target, Pencil, Filter, X, Check, MapPin } from 'lucide-react'
+import { Plus, Trash2, UtensilsCrossed, Car, Home, Heart, Smile, ShoppingBag, BookOpen, Target, Pencil, Filter, X, Check, MapPin, ChevronDown, ChevronUp } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -137,6 +137,31 @@ export default function GastosPage() {
 
   const filtrosAtivos = filtroCategoria !== 'Todas' || filtroMes !== 'todos'
 
+  const formatarMes = (ym: string) => {
+    const [y, m] = ym.split('-')
+    const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+    return `${meses[parseInt(m) - 1]} ${y}`
+  }
+
+  // Total filtrado
+  const totalFiltrado = useMemo(() =>
+    gastosFiltrados.reduce((s, g) => s + Number(g.valor), 0),
+  [gastosFiltrados])
+
+  // Breakdown por categoria (mês atual)
+  const [showBreakdown, setShowBreakdown] = useState(false)
+  const breakdownMes = useMemo(() => {
+    const mesFiltro = filtroMes !== 'todos' ? filtroMes : MES_ATUAL
+    const gastosMesFiltro = gastos.filter(g => g.data.startsWith(mesFiltro))
+    return CATEGORIAS
+      .map(cat => ({
+        ...cat,
+        total: gastosMesFiltro.filter(g => g.categoria === cat.label).reduce((s, g) => s + Number(g.valor), 0),
+      }))
+      .filter(c => c.total > 0)
+      .sort((a, b) => b.total - a.total)
+  }, [gastos, filtroMes])
+
   return (
     <div className="flex flex-col h-full">
 
@@ -188,6 +213,58 @@ export default function GastosPage() {
         </div>
       </div>
 
+      {/* Card Breakdown por Categoria */}
+      {breakdownMes.length > 0 && (
+        <div className="px-4 pb-2">
+          <div className="bg-card rounded-2xl overflow-hidden" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 18%)' }}>
+            <button
+              onClick={() => setShowBreakdown(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-primary/15 flex items-center justify-center">
+                  <Filter size={12} className="text-primary" />
+                </div>
+                <span className="text-xs font-semibold text-foreground">Por categoria</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {filtroMes !== 'todos' ? formatarMes(filtroMes) : 'Este mês'}
+                </span>
+                {showBreakdown ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
+              </div>
+            </button>
+            {showBreakdown && (
+              <div className="px-4 pb-3 space-y-2 border-t border-border/30">
+                {breakdownMes.map(cat => {
+                  const pct = gastosMes > 0 ? (cat.total / gastosMes) * 100 : 0
+                  return (
+                    <div key={cat.label} className="flex items-center gap-3 pt-2">
+                      <div className="w-7 h-7 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                        <cat.Icon size={13} className={cat.color} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-baseline mb-1">
+                          <span className="text-xs font-medium truncate">{cat.label}</span>
+                          <span className="text-xs font-bold text-foreground ml-2 shrink-0">R$ {cat.total.toFixed(2).replace('.', ',')}</span>
+                        </div>
+                        <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%`, backgroundColor: 'oklch(0.62 0.18 162)' }}
+                          />
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground shrink-0 w-8 text-right">{pct.toFixed(0)}%</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Botões ação + filtro */}
       <div className="px-4 pb-3 flex gap-2">
         <button
@@ -217,6 +294,11 @@ export default function GastosPage() {
               </button>
             )}
           </div>
+          {filtrosAtivos && gastosFiltrados.length > 0 && (
+            <p className="text-[11px] text-muted-foreground mt-1">
+              {gastosFiltrados.length} resultado{gastosFiltrados.length !== 1 ? 's' : ''} · Total: <span className="text-destructive font-semibold">R$ {totalFiltrado.toFixed(2).replace('.', ',')}</span>
+            </p>
+          )}
           <div>
             <p className="text-[11px] text-muted-foreground mb-1.5 font-medium">Categoria</p>
             <div className="flex flex-wrap gap-1.5">
@@ -255,7 +337,7 @@ export default function GastosPage() {
         ) : gastosFiltrados.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center mb-4">
-              <HelpCircle size={24} className="text-muted-foreground" />
+              <MapPin size={24} className="text-muted-foreground" />
             </div>
             <p className="text-sm font-medium text-foreground/60">{filtrosAtivos ? 'Nenhum resultado' : 'Nenhum gasto ainda'}</p>
             <p className="text-xs text-muted-foreground mt-1">{filtrosAtivos ? 'Tente outros filtros' : 'Adicione aqui ou pelo Chat'}</p>
