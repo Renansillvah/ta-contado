@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Plus, Trash2, UtensilsCrossed, Car, Home, Heart, Smile, ShoppingBag, HelpCircle, Target, Pencil, Filter, X, Check } from 'lucide-react'
+import { Plus, Trash2, UtensilsCrossed, Car, Home, Heart, Smile, ShoppingBag, BookOpen, Target, Pencil, Filter, X, Check, MapPin } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -13,7 +13,8 @@ const CATEGORIAS = [
   { label: 'Saúde', Icon: Heart, color: 'text-red-400' },
   { label: 'Lazer', Icon: Smile, color: 'text-yellow-400' },
   { label: 'Compras', Icon: ShoppingBag, color: 'text-pink-400' },
-  { label: 'Outros', Icon: HelpCircle, color: 'text-muted-foreground' },
+  { label: 'Educação', Icon: BookOpen, color: 'text-cyan-400' },
+  { label: 'Outros', Icon: MapPin, color: 'text-muted-foreground' },
 ]
 
 interface FormGasto {

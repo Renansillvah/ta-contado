@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Plus, Trash2, Pencil, Briefcase, Wrench, Home, ShoppingCart, TrendingUp, DollarSign, CheckCircle, Clock, SlidersHorizontal, X } from 'lucide-react'
+import { Plus, Trash2, Pencil, Briefcase, Wrench, Home, ShoppingCart, TrendingUp, Mic2, Bike, Music, Video, Package, CheckCircle, Clock, SlidersHorizontal, X } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -8,10 +8,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 const CATEGORIAS = [
   { label: 'Salário', Icon: Briefcase, color: 'text-primary' },
   { label: 'Freela / Serviço', Icon: Wrench, color: 'text-blue-400' },
+  { label: 'Show / Música', Icon: Mic2, color: 'text-pink-400' },
+  { label: 'Drone / Vídeo', Icon: Video, color: 'text-cyan-400' },
+  { label: 'Motoboy / Entrega', Icon: Bike, color: 'text-orange-400' },
   { label: 'Aluguel', Icon: Home, color: 'text-purple-400' },
-  { label: 'Venda', Icon: ShoppingCart, color: 'text-orange-400' },
-  { label: 'Investimento', Icon: TrendingUp, color: 'text-yellow-400' },
-  { label: 'Outros', Icon: DollarSign, color: 'text-muted-foreground' },
+  { label: 'Venda', Icon: ShoppingCart, color: 'text-yellow-400' },
+  { label: 'Investimento', Icon: TrendingUp, color: 'text-emerald-400' },
+  { label: 'Outros', Icon: Package, color: 'text-muted-foreground' },
 ]
 
 interface FormReceita {
