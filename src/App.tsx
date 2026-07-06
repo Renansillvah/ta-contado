@@ -348,9 +348,9 @@ function Header({
 
   return (
     <div
-      className="px-4 pt-3.5 pb-3 mx-2 mt-2"
+      className="px-4 pt-3.5 pb-3"
       style={{
-        background: 'linear-gradient(135deg, #0a1628 0%, #0d2452 50%, #0f2d6b 100%)',
+        background: 'linear-gradient(135deg, #1a3a8f 0%, #1e50c8 50%, #2563eb 100%)',
         borderRadius: '0 0 32px 32px',
       }}
     >
@@ -359,11 +359,13 @@ function Header({
         <div className="flex items-center gap-3">
           <button
             onClick={onMenuOpen}
-            className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-opacity hover:opacity-80 active:opacity-60"
-            style={{ background: 'rgba(255,255,255,0.1)', boxShadow: '0 2px 12px rgba(0,0,0,0.3)' }}
+            className="shrink-0 flex flex-col justify-center gap-[5px] px-2.5 py-2.5 rounded-2xl transition-all hover:opacity-80 active:scale-95"
+            style={{ background: 'rgba(255,255,255,0.12)', boxShadow: '0 2px 10px rgba(0,0,0,0.25)', width: 42, height: 42 }}
             aria-label="Abrir menu"
           >
-            <Menu size={20} className="text-white" />
+            <span className="block h-[2px] w-5 rounded-full bg-white" />
+            <span className="block h-[2px] w-3.5 rounded-full bg-white/70" />
+            <span className="block h-[2px] w-5 rounded-full bg-white" />
           </button>
           <div>
             <p className="font-bold text-white text-[15px] leading-tight tracking-tight">Tá Contado</p>
