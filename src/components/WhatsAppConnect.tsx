@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { MessageCircle, CheckCircle, Smartphone, ArrowRight, Loader2, X, RefreshCw } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
 
 const REGISTER_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-register`
 

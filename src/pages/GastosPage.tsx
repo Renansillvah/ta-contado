@@ -182,9 +182,6 @@ export default function GastosPage() {
   [gastosFiltrados])
 
   const mesFiltroAtivo = filtroMes !== 'todos' ? filtroMes : MES_ATUAL
-  const gastosMesFiltro = useMemo(() =>
-    gastos.filter(g => g.data.startsWith(mesFiltroAtivo)).reduce((s, g) => s + Number(g.valor), 0),
-  [gastos, mesFiltroAtivo])
 
   const breakdownMes = useMemo(() => {
     const gastosDoPeriodo = gastos.filter(g => g.data.startsWith(mesFiltroAtivo))
