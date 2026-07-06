@@ -26,8 +26,11 @@ function Header({ nomeUsuario }: { nomeUsuario: string }) {
 
   return (
     <div
-      className="px-4 pt-3.5 pb-3"
-      style={{ backgroundColor: 'oklch(0.42 0.14 240)' }}
+      className="px-4 pt-3.5 pb-3 mx-2 mt-2"
+      style={{
+        background: 'linear-gradient(135deg, #1a3a6e 0%, #1e4fc2 45%, #2563eb 75%, #1d4ed8 100%)',
+        borderRadius: '38px',
+      }}
     >
       <div className="flex items-center justify-between">
         {/* Logo + identidade */}

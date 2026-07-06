@@ -43,8 +43,9 @@ RESPONSE=$(curl -s -X POST "${BACKUP_URL}/sandbox/backup-hook" \
   -H "X-Sandbox-API-Key: ${API_KEY}" \
   -d "{\"projectId\": \"$PROJECT_ID\", \"sessionId\": \"$SESSION_ID\"}" \
   --max-time 120 2>&1) || {
+    # FAIL-LOUD: curl failure (network/timeout) é erro real do hook — Claude CLI precisa saber.
     echo "[backup-hook] curl failed: $RESPONSE" >&2
-    exit 0
+    exit 1
   }
 
 # Verificar sucesso
@@ -55,7 +56,8 @@ if [ "$SUCCESS" = "true" ]; then
   echo "[backup-hook] Backup created: $VERSION"
   exit 0
 else
+  # FAIL-LOUD: API retornou success != true — backup falhou de verdade, propagar pro Claude.
   ERROR=$(echo "$RESPONSE" | jq -r '.error // "Unknown error"' 2>/dev/null || echo "$RESPONSE")
   echo "[backup-hook] Backup failed: $ERROR" >&2
-  exit 0
+  exit 1
 fi
