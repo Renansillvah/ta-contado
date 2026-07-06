@@ -59,6 +59,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { carregar() }, [carregar])
 
+  // Realtime: atualiza automaticamente quando Edge Function salva dados via WhatsApp
+  useEffect(() => {
+    const channel = supabase
+      .channel('whatsapp-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gastos' }, (payload) => {
+        setGastos(prev => {
+          if (prev.find(g => g.id === payload.new.id)) return prev
+          toast('📱 Gasto registrado pelo WhatsApp!', { icon: '💸' })
+          return [payload.new as Gasto, ...prev]
+        })
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'receitas' }, (payload) => {
+        setReceitas(prev => {
+          if (prev.find(r => r.id === payload.new.id)) return prev
+          toast('📱 Receita registrada pelo WhatsApp!', { icon: '💰' })
+          return [payload.new as Receita, ...prev]
+        })
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dividas' }, (payload) => {
+        setDividas(prev => {
+          if (prev.find(d => d.id === payload.new.id)) return prev
+          toast('📱 Dívida registrada pelo WhatsApp!', { icon: '📋' })
+          return [payload.new as Divida, ...prev]
+        })
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
   const adicionarGasto = async (g: Omit<Gasto, 'id' | 'created_at'>) => {
     const { data, error } = await supabase.from('gastos').insert([g]).select().single()
     if (error) { toast.error('Erro ao salvar gasto'); return }
