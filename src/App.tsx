@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MessageSquare, Receipt, CreditCard, TrendingUp, BarChart2, X, User, Target, Calendar, MessageCircle, Share2, FileText, Download, Trash2, ChevronRight } from 'lucide-react'
+import { MessageSquare, Receipt, CreditCard, TrendingUp, BarChart2, X, User, Target, Calendar, MessageCircle, Share2, FileText, Download, Trash2, ChevronRight, CheckCircle } from 'lucide-react'
 import { AppProvider, useApp } from '@/context/AppContext'
 import ChatPage from '@/pages/ChatPage'
 import GastosPage from '@/pages/GastosPage'
@@ -7,6 +7,7 @@ import DividasPage from '@/pages/DividasPage'
 import ReceitasPage from '@/pages/ReceitasPage'
 import ResumoPage from '@/pages/ResumoPage'
 import Onboarding from '@/components/Onboarding'
+import { WhatsAppConnect } from '@/components/WhatsAppConnect'
 import { Toaster } from 'sonner'
 import { toast } from 'sonner'
 
@@ -30,6 +31,9 @@ function SideMenu({
   nomeUsuario: string
 }) {
   const { resetDados } = useApp() as { resetDados?: () => void }
+  const [showWhatsApp, setShowWhatsApp] = useState(false)
+  const waConnected = !!localStorage.getItem('wa_phone')
+  const waPhone = localStorage.getItem('wa_phone') ?? ''
 
   const inicial = nomeUsuario ? nomeUsuario.charAt(0).toUpperCase() : 'U'
 
@@ -204,45 +208,49 @@ function SideMenu({
           <p className="text-[10px] font-bold tracking-widest text-white/30 mb-2 px-1">TÁ CONTADO NO WHATSAPP</p>
           <div
             className="rounded-2xl p-4"
-            style={{ background: 'linear-gradient(135deg, #064e3b, #065f46)', border: '1px solid rgba(34,197,94,0.3)' }}
+            style={{
+              background: waConnected
+                ? 'linear-gradient(135deg, #064e3b, #065f46)'
+                : 'linear-gradient(135deg, #1a2a4a, #1e3460)',
+              border: waConnected ? '1px solid rgba(34,197,94,0.4)' : '1px solid rgba(37,99,235,0.3)'
+            }}
           >
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-11 h-11 rounded-xl bg-green-500 flex items-center justify-center shrink-0">
-                <MessageCircle size={22} className="text-white" />
+              <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${waConnected ? 'bg-green-500' : 'bg-blue-600'}`}>
+                {waConnected ? <CheckCircle size={22} className="text-white" /> : <MessageCircle size={22} className="text-white" />}
               </div>
-              <div>
-                <p className="text-white font-bold text-[14px]">Usar pelo WhatsApp</p>
-                <p className="text-green-300/80 text-[11px]">Registre tudo sem abrir o app</p>
+              <div className="flex-1">
+                <p className="text-white font-bold text-[14px]">
+                  {waConnected ? 'WhatsApp conectado' : 'Usar pelo WhatsApp'}
+                </p>
+                <p className={`text-[11px] ${waConnected ? 'text-green-300/80' : 'text-white/50'}`}>
+                  {waConnected ? `+55 ${waPhone}` : 'Registre tudo sem abrir o app'}
+                </p>
               </div>
             </div>
-            <p className="text-white/70 text-[12px] leading-relaxed mb-3">
-              Imagine mandar uma mensagem no WhatsApp e o app atualizar automaticamente:
-            </p>
-            <div className="space-y-1.5 text-[12px]">
-              <p className="text-white/80">"Almoço 25" → gasto registrado ✅</p>
-              <p className="text-white/80">"Como foi esse mês?" → resumo no ZAP ✅</p>
-              <p className="text-white/80">"Devo 500 no Nubank" → dívida salva ✅</p>
-            </div>
-            <div
-              className="mt-3 rounded-xl p-3"
-              style={{ background: 'rgba(0,0,0,0.25)' }}
-            >
-              <p className="text-green-400 font-bold text-[12px] mb-1">🚀 Em breve na versão completa</p>
-              <p className="text-white/60 text-[11px] leading-relaxed">
-                Esta é a funcionalidade estrela do Tá Contado. O app vai chamar você no WhatsApp, e você conversa como se fosse um amigo — qualquer gasto, receita ou dúvida financeira, tudo sincronizado em tempo real aqui no app.
-              </p>
-            </div>
+            {!waConnected && (
+              <div className="space-y-1.5 mb-3">
+                {['"Gastei 50 no mercado" → gasto salvo ✅', '"Recebi 3000" → receita registrada ✅', '"Quanto gastei?" → resumo no ZAP ✅'].map(ex => (
+                  <p key={ex} className="text-white/70 text-[12px]">{ex}</p>
+                ))}
+              </div>
+            )}
             <button
-              className="mt-3 w-full py-2.5 rounded-xl bg-green-500 hover:bg-green-400 transition-colors text-white font-bold text-[13px]"
-              onClick={() => {
-                toast.success('Você será avisado quando esta funcionalidade estiver disponível!')
-                onClose()
-              }}
+              className={`w-full py-2.5 rounded-xl font-bold text-[13px] transition-colors ${waConnected ? 'bg-white/10 hover:bg-white/15 text-white' : 'bg-green-500 hover:bg-green-400 text-white'}`}
+              onClick={() => { setShowWhatsApp(true) }}
             >
-              Quero ser avisado no WhatsApp!
+              {waConnected ? 'Gerenciar conexão' : 'Vincular meu WhatsApp'}
             </button>
           </div>
         </div>
+
+        {/* Modal WhatsApp */}
+        {showWhatsApp && (
+          <WhatsAppConnect
+            nomeUsuario={nomeUsuario}
+            onClose={() => setShowWhatsApp(false)}
+          />
+        )}
 
         {/* Seção COMPARTILHAR */}
         <div className="px-4 mt-4">
