@@ -18,20 +18,61 @@ const MSG_INICIAL: Mensagem = {
   timestamp: new Date(),
 }
 
-const REGEX_RECEITA = /(?:recebi|ganhei|entrou|freela|salário|pagamento|venda)\s*(?:de\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
+const REGEX_RECEITA = /(?:recebi|ganhei|entrou|salário|pagamento)\s*(?:de\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
 const REGEX_DIVIDA = /(?:devo|tenho\s+(?:uma\s+)?dívida|cartão|financiamento|empréstimo)\s*(?:de\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
-const REGEX_GASTO_KEYWORDS = /(?:gastei|paguei|comprei|almoço|lanche|café|jantar|gasolina|uber|ônibus|metrô|ifood|mercado|supermercado|farmácia|remédio|médico|cinema|bar|show|netflix|spotify|roupa|sapato|celular|eletrônico|aluguel|luz|água|internet|gás|curso|livro|escola)\s*[a-zA-Zçãõéíóúàèìòùâêîôûäëïöü]*\s*(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
+const REGEX_GASTO_KEYWORDS = /(?:gastei|paguei|comprei|almoço|lanche|café|jantar|gasolina|uber|ônibus|metrô|ifood|mercado|supermercado|farmácia|remédio|médico|cinema|bar|show|netflix|spotify|roupa|sapato|celular|eletrônico|aluguel|luz|água|internet|gás|curso|livro|escola|tráfego|anúncio|equipamento)\s*[a-zA-Zçãõéíóúàèìòùâêîôûäëïöü\s]*\s*(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
 const REGEX_GASTO_GENERICO = /^(.+?)\s+(\d+(?:[.,]\d{1,2})?)(?:\s+reais?)?$/i
 
+// ── Extrai descrição limpa removendo prefixos e o valor ─────────────────────
+function extrairDescricao(texto: string): string {
+  let desc = texto.trim()
+  // Remove prefixos verbais
+  desc = desc.replace(/^(?:gastei|paguei|comprei)\s+/i, '')
+  // Remove o valor numérico e sufixo "reais" do final
+  desc = desc.replace(/\s+r?\$?\s*\d+(?:[.,]\d{1,2})?\s*(?:reais?)?$/i, '')
+  // Remove "de " solto no início
+  desc = desc.replace(/^de\s+/i, '')
+  // Capitaliza primeira letra
+  desc = desc.charAt(0).toUpperCase() + desc.slice(1)
+  return desc.trim() || texto.trim()
+}
+
+// ── Extrai descrição de receita removendo prefixos verbais ──────────────────
+function extrairDescricaoReceita(texto: string): string {
+  let desc = texto.trim()
+  desc = desc.replace(/^(?:recebi|ganhei|entrou|vendi|salário de|pagamento de)\s+/i, '')
+  desc = desc.replace(/^(?:r\$\s*)?\d+(?:[.,]\d{1,2})?\s*(?:reais?)?\s*(?:de\s+)?/i, '')
+  desc = desc.replace(/\s+r?\$?\s*\d+(?:[.,]\d{1,2})?\s*(?:reais?)?$/i, '')
+  desc = desc.replace(/^de\s+/i, '')
+  desc = desc.charAt(0).toUpperCase() + desc.slice(1)
+  return desc.trim() || texto.trim()
+}
+
+// ── Categoriza gastos ────────────────────────────────────────────────────────
 function detectarCategoria(texto: string): string {
   const t = texto.toLowerCase()
-  if (/almoço|lanche|café|jantar|restaurante|ifood|delivery|mercado|supermercado|padaria|açougue|feira|doce|sorvete|pizza|hamburguer|sushi/.test(t)) return 'Alimentação'
-  if (/uber|gasolina|ônibus|metrô|taxi|combustível|estacionamento|pedágio|transporte|moto|bicicleta/.test(t)) return 'Transporte'
-  if (/farmácia|remédio|médico|dentista|hospital|consulta|exame|plano de saúde|saúde|academia/.test(t)) return 'Saúde'
-  if (/cinema|bar|show|netflix|spotify|teatro|jogos|game|streaming|lazer|viagem|hotel|passeio/.test(t)) return 'Lazer'
+  if (/almoço|lanche|café|jantar|restaurante|ifood|delivery|mercado|supermercado|padaria|açougue|feira|doce|sorvete|pizza|hamburguer|sushi|comida|refeição/.test(t)) return 'Alimentação'
+  if (/uber|99|taxi|táxi|ônibus|metrô|estacionamento|pedágio|transporte|gasolina|combustível|etanol|moto|bicicleta|passagem/.test(t)) return 'Transporte'
+  if (/farmácia|remédio|médico|dentista|hospital|consulta|exame|plano de saúde|saúde|academia|psicólogo/.test(t)) return 'Saúde'
+  if (/cinema|bar|teatro|jogos|game|streaming|lazer|viagem|hotel|passeio|ingresso|evento|festa|show/.test(t)) return 'Lazer'
   if (/roupa|sapato|celular|eletrônico|computador|notebook|tênis|bolsa|acessório|compras|shopping/.test(t)) return 'Compras'
   if (/aluguel|luz|água|internet|gás|condomínio|iptu|financiamento|moradia|casa|apartamento/.test(t)) return 'Moradia'
-  if (/curso|livro|escola|faculdade|universidade|material|educação|diploma|treinamento/.test(t)) return 'Educação'
+  if (/curso|livro|escola|faculdade|universidade|material|diploma|treinamento/.test(t)) return 'Educação'
+  if (/netflix|spotify|amazon|prime|disney|streaming/.test(t)) return 'Lazer'
+  return 'Outros'
+}
+
+// ── Categoriza receitas ──────────────────────────────────────────────────────
+function detectarCategoriaReceita(texto: string): string {
+  const t = texto.toLowerCase()
+  if (/show|apresentação|performance|música|cantor|cantora|banda|palco|evento musical/.test(t)) return 'Show / Música'
+  if (/drone|gravação|filmagem|vídeo|foto|fotografia|edição|captação/.test(t)) return 'Drone / Vídeo'
+  if (/motoboy|entrega|frete|delivery|courier|moto/.test(t)) return 'Motoboy / Entrega'
+  if (/freela|freelance|serviço|trabalho|projeto|cliente|job|consultoria/.test(t)) return 'Freela / Serviço'
+  if (/salário|salario|pagamento fixo|contracheque|mensal/.test(t)) return 'Salário'
+  if (/aluguel|aluguei|locação/.test(t)) return 'Aluguel'
+  if (/vendi|venda|vendeu|produto|mercadoria/.test(t)) return 'Venda'
+  if (/investimento|dividendo|rendimento|juros|fundo|ação|cripto/.test(t)) return 'Investimento'
   return 'Outros'
 }
 
@@ -56,8 +97,10 @@ function parseComando(
   if (matchReceita) {
     const valor = parseFloat(matchReceita[1].replace(',', '.'))
     if (valor > 0) {
-      adicionarReceita({ descricao: texto.trim(), categoria: 'Outros', valor, tipo: 'recebido', data: hoje })
-      return `Receita de R$ ${valor.toFixed(2).replace('.', ',')} registrada!`
+      const descricao = extrairDescricaoReceita(texto)
+      const categoria = detectarCategoriaReceita(texto)
+      adicionarReceita({ descricao, categoria, valor, tipo: 'recebido', data: hoje })
+      return `Receita de R$ ${valor.toFixed(2).replace('.', ',')} registrada em ${categoria}!`
     }
   }
 
@@ -65,7 +108,8 @@ function parseComando(
   if (matchDivida) {
     const valor = parseFloat(matchDivida[1].replace(',', '.'))
     if (valor > 0) {
-      adicionarDivida({ nome: texto.trim(), tipo: 'outros', valor_total: valor, valor_pago: 0, parcelado: false })
+      const descricao = extrairDescricao(texto)
+      adicionarDivida({ nome: descricao, tipo: 'outros', valor_total: valor, valor_pago: 0, parcelado: false })
       return `Dívida de R$ ${valor.toFixed(2).replace('.', ',')} registrada!`
     }
   }
@@ -74,8 +118,9 @@ function parseComando(
   if (matchGastoKw) {
     const valor = parseFloat(matchGastoKw[1].replace(',', '.'))
     if (valor > 0) {
+      const descricao = extrairDescricao(texto)
       const categoria = detectarCategoria(texto)
-      adicionarGasto({ descricao: texto.trim(), valor, categoria, data: hoje })
+      adicionarGasto({ descricao, valor, categoria, data: hoje })
       return `Gasto de R$ ${valor.toFixed(2).replace('.', ',')} registrado em ${categoria}!`
     }
   }
@@ -84,8 +129,9 @@ function parseComando(
   if (matchGenerico) {
     const valor = parseFloat(matchGenerico[2].replace(',', '.'))
     if (valor > 0 && valor < 100000) {
+      const descricao = extrairDescricao(texto)
       const categoria = detectarCategoria(texto)
-      adicionarGasto({ descricao: texto.trim(), valor, categoria, data: hoje })
+      adicionarGasto({ descricao, valor, categoria, data: hoje })
       return `Gasto de R$ ${valor.toFixed(2).replace('.', ',')} registrado em ${categoria}!`
     }
   }
