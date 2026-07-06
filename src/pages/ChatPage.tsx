@@ -40,12 +40,23 @@ function extrairDescricao(texto: string): string {
 // ── Extrai descrição de receita removendo prefixos verbais ──────────────────
 function extrairDescricaoReceita(texto: string): string {
   let desc = texto.trim()
-  desc = desc.replace(/^(?:recebi|ganhei|entrou|vendi|salário de|pagamento de)\s+/i, '')
+  // Remove verbos de receita no início
+  desc = desc.replace(/^(?:recebi|ganhei|entrou|vendi|salário de|pagamento de|ganho de)\s+/i, '')
+  // Remove valor numérico no início (ex: "750 Show Barretos" → "Show Barretos")
   desc = desc.replace(/^(?:r\$\s*)?\d+(?:[.,]\d{1,2})?\s*(?:reais?)?\s*(?:de\s+)?/i, '')
-  desc = desc.replace(/\s+r?\$?\s*\d+(?:[.,]\d{1,2})?\s*(?:reais?)?$/i, '')
+  // Remove valor numérico no final
+  desc = desc.replace(/\s+(?:r\$\s*)?\d+(?:[.,]\d{1,2})?\s*(?:reais?)?$/i, '')
+  // Remove "de " solto no início
   desc = desc.replace(/^de\s+/i, '')
+  desc = desc.trim()
+  // Normaliza nomes conhecidos
+  const lower = desc.toLowerCase()
+  if (!desc || lower === 'motoboy' || lower === 'entrega') desc = 'Motoboy'
+  else if (lower === 'drone') desc = 'Gravação drone'
+  // Capitaliza e limita a 20 chars para não truncar na UI
   desc = desc.charAt(0).toUpperCase() + desc.slice(1)
-  return desc.trim() || texto.trim()
+  if (desc.length > 20) desc = desc.substring(0, 20).trim()
+  return desc || texto.trim().substring(0, 20)
 }
 
 // ── Categoriza gastos ────────────────────────────────────────────────────────

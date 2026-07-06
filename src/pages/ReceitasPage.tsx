@@ -1,21 +1,26 @@
 import { useState, useMemo } from 'react'
-import { Plus, Trash2, Pencil, Briefcase, Wrench, Home, ShoppingCart, TrendingUp, Mic2, Bike, Video, Package, CheckCircle, Clock, SlidersHorizontal, X, Zap } from 'lucide-react'
+import { Plus, Trash2, Pencil, Briefcase, Wrench, Home, ShoppingCart, TrendingUp, Mic2, Bike, Video, Package, CheckCircle, Clock, SlidersHorizontal, X, Zap, RefreshCw } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const CATEGORIAS = [
-  { label: 'Salário', Icon: Briefcase, color: 'text-primary' },
-  { label: 'Freela / Serviço', Icon: Wrench, color: 'text-blue-400' },
-  { label: 'Show / Música', Icon: Mic2, color: 'text-pink-400' },
-  { label: 'Drone / Vídeo', Icon: Video, color: 'text-cyan-400' },
-  { label: 'Motoboy / Entrega', Icon: Bike, color: 'text-orange-400' },
-  { label: 'Aluguel', Icon: Home, color: 'text-purple-400' },
-  { label: 'Venda', Icon: ShoppingCart, color: 'text-yellow-400' },
-  { label: 'Investimento', Icon: TrendingUp, color: 'text-emerald-400' },
-  { label: 'Outros', Icon: Package, color: 'text-muted-foreground' },
-]
+  { label: 'Salário', Icon: Briefcase, color: 'text-primary', natureza: 'ganho' },
+  { label: 'Freela / Serviço', Icon: Wrench, color: 'text-blue-400', natureza: 'ganho' },
+  { label: 'Show / Música', Icon: Mic2, color: 'text-pink-400', natureza: 'ganho' },
+  { label: 'Drone / Vídeo', Icon: Video, color: 'text-cyan-400', natureza: 'ganho' },
+  { label: 'Motoboy / Entrega', Icon: Bike, color: 'text-orange-400', natureza: 'ganho' },
+  { label: 'Aluguel', Icon: Home, color: 'text-purple-400', natureza: 'ganho' },
+  { label: 'Venda', Icon: ShoppingCart, color: 'text-yellow-400', natureza: 'ganho' },
+  { label: 'Investimento', Icon: TrendingUp, color: 'text-emerald-400', natureza: 'ganho' },
+  { label: 'Recebimento', Icon: RefreshCw, color: 'text-sky-400', natureza: 'recebimento' },
+  { label: 'Outros', Icon: Package, color: 'text-muted-foreground', natureza: 'ganho' },
+] as const
+
+function categoriaNatureza(cat: string): 'ganho' | 'recebimento' {
+  return cat === 'Recebimento' ? 'recebimento' : 'ganho'
+}
 
 interface FormReceita {
   descricao: string
@@ -40,6 +45,7 @@ const MES_ATUAL = new Date().toISOString().slice(0, 7)
 
 export default function ReceitasPage() {
   const { receitas, adicionarReceita, removerReceita, marcarRecebido, loading } = useApp()
+  const [subAba, setSubAba] = useState<'ganho' | 'recebimento'>('ganho')
   const [showForm, setShowForm] = useState(false)
   const [editandoId, setEditandoId] = useState<string | null>(null)
   const [showFiltros, setShowFiltros] = useState(false)
@@ -50,35 +56,58 @@ export default function ReceitasPage() {
   const [salvando, setSalvando] = useState(false)
   const [marcandoId, setMarcandoId] = useState<string | null>(null)
 
+  const receitasGanhos = useMemo(() =>
+    receitas.filter(r => categoriaNatureza(r.categoria) === 'ganho'),
+  [receitas])
+
+  const receitasRecebimentos = useMemo(() =>
+    receitas.filter(r => categoriaNatureza(r.categoria) === 'recebimento'),
+  [receitas])
+
+  const receitasSubAba = subAba === 'ganho' ? receitasGanhos : receitasRecebimentos
+
   // Totais do mês atual
   const totalRecebidoMes = useMemo(() =>
-    receitas.filter(r => r.data.startsWith(MES_ATUAL) && r.tipo === 'recebido').reduce((s, r) => s + Number(r.valor), 0),
-  [receitas])
+    receitasGanhos.filter(r => r.data.startsWith(MES_ATUAL) && r.tipo === 'recebido').reduce((s, r) => s + Number(r.valor), 0),
+  [receitasGanhos])
 
   const totalAReceberMes = useMemo(() =>
-    receitas.filter(r => r.data.startsWith(MES_ATUAL) && r.tipo === 'a_receber').reduce((s, r) => s + Number(r.valor), 0),
-  [receitas])
+    receitasGanhos.filter(r => r.data.startsWith(MES_ATUAL) && r.tipo === 'a_receber').reduce((s, r) => s + Number(r.valor), 0),
+  [receitasGanhos])
+
+  const totalRecebimentosMes = useMemo(() =>
+    receitasRecebimentos.filter(r => r.data.startsWith(MES_ATUAL) && r.tipo === 'recebido').reduce((s, r) => s + Number(r.valor), 0),
+  [receitasRecebimentos])
 
   const mesesDisponiveis = useMemo(() => {
-    const set = new Set(receitas.map(r => r.data.slice(0, 7)))
+    const set = new Set(receitasSubAba.map(r => r.data.slice(0, 7)))
     return Array.from(set).sort((a, b) => b.localeCompare(a))
-  }, [receitas])
+  }, [receitasSubAba])
+
+  const categoriasDaSubAba = CATEGORIAS.filter(c => c.natureza === subAba)
 
   const receitasFiltradas = useMemo(() => {
-    return receitas.filter(r => {
+    return receitasSubAba.filter(r => {
       const catOk = filtroCategoria === 'Todas' || r.categoria === filtroCategoria
       const tipoOk = filtroTipo === 'todos' || r.tipo === filtroTipo
       const mesOk = filtroMes === 'todos' || r.data.startsWith(filtroMes)
       return catOk && tipoOk && mesOk
     })
-  }, [receitas, filtroCategoria, filtroTipo, filtroMes])
+  }, [receitasSubAba, filtroCategoria, filtroTipo, filtroMes])
 
   const filtrosAtivos = filtroCategoria !== 'Todas' || filtroTipo !== 'todos' || filtroMes !== 'todos'
 
-  // Total filtrado
   const totalFiltrado = useMemo(() =>
     receitasFiltradas.filter(r => r.tipo === 'recebido').reduce((s, r) => s + Number(r.valor), 0),
   [receitasFiltradas])
+
+  const trocarSubAba = (aba: 'ganho' | 'recebimento') => {
+    setSubAba(aba)
+    setFiltroCategoria('Todas')
+    setFiltroTipo('todos')
+    setFiltroMes('todos')
+    setShowFiltros(false)
+  }
 
   const abrirEditar = (r: any) => {
     setForm({ descricao: r.descricao, categoria: r.categoria, valor: String(r.valor), tipo: r.tipo, data: r.data })
@@ -136,29 +165,66 @@ export default function ReceitasPage() {
               {format(new Date(), "MMMM 'de' yyyy", { locale: ptBR }).replace(/^\w/, c => c.toUpperCase())}
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <div className="bg-primary/10 rounded-xl p-3">
-              <p className="text-[10px] text-muted-foreground mb-0.5">Recebido</p>
-              <p className="text-base font-bold text-primary">R$ {totalRecebidoMes.toFixed(2).replace('.', ',')}</p>
+              <p className="text-[10px] text-muted-foreground mb-0.5">Ganhos</p>
+              <p className="text-sm font-bold text-primary">R$ {totalRecebidoMes.toFixed(2).replace('.', ',')}</p>
             </div>
             <div className="bg-secondary rounded-xl p-3">
               <p className="text-[10px] text-muted-foreground mb-0.5">A receber</p>
-              <p className="text-base font-bold text-foreground">R$ {totalAReceberMes.toFixed(2).replace('.', ',')}</p>
+              <p className="text-sm font-bold text-foreground">R$ {totalAReceberMes.toFixed(2).replace('.', ',')}</p>
               {totalAReceberMes > 0 && (
                 <p className="text-[10px] text-muted-foreground mt-0.5">pendente</p>
               )}
             </div>
+            <div className="bg-sky-500/10 rounded-xl p-3">
+              <p className="text-[10px] text-muted-foreground mb-0.5">Recebimentos</p>
+              <p className="text-sm font-bold text-sky-400">R$ {totalRecebimentosMes.toFixed(2).replace('.', ',')}</p>
+            </div>
           </div>
+        </div>
+      </div>
+
+      {/* Sub-abas Ganhos / Recebimentos */}
+      <div className="px-4 pb-3">
+        <div className="flex gap-1 p-1 bg-secondary rounded-2xl">
+          <button
+            onClick={() => trocarSubAba('ganho')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${subAba === 'ganho' ? 'bg-card text-foreground' : 'text-muted-foreground'}`}
+            style={subAba === 'ganho' ? { boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' } : {}}
+          >
+            <TrendingUp size={14} className={subAba === 'ganho' ? 'text-primary' : 'text-muted-foreground'} />
+            Ganhos
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${subAba === 'ganho' ? 'bg-primary/15 text-primary' : 'bg-muted/50 text-muted-foreground'}`}>
+              {receitasGanhos.length}
+            </span>
+          </button>
+          <button
+            onClick={() => trocarSubAba('recebimento')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${subAba === 'recebimento' ? 'bg-card text-foreground' : 'text-muted-foreground'}`}
+            style={subAba === 'recebimento' ? { boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' } : {}}
+          >
+            <RefreshCw size={14} className={subAba === 'recebimento' ? 'text-sky-400' : 'text-muted-foreground'} />
+            Recebimentos
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${subAba === 'recebimento' ? 'bg-sky-500/15 text-sky-400' : 'bg-muted/50 text-muted-foreground'}`}>
+              {receitasRecebimentos.length}
+            </span>
+          </button>
         </div>
       </div>
 
       {/* Botões topo */}
       <div className="px-4 pb-2 flex gap-2">
         <button
-          onClick={() => { setShowForm(true); setEditandoId(null); setForm({ ...FORM_VAZIO, data: new Date().toISOString().split('T')[0] }) }}
+          onClick={() => {
+            setShowForm(true)
+            setEditandoId(null)
+            setForm({ ...FORM_VAZIO, categoria: subAba === 'ganho' ? 'Salário' : 'Recebimento', data: new Date().toISOString().split('T')[0] })
+          }}
           className="flex-1 bg-primary text-primary-foreground rounded-2xl py-3.5 font-semibold flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-transform"
         >
-          <Plus size={18} strokeWidth={2.5} /> Adicionar receita
+          <Plus size={18} strokeWidth={2.5} />
+          {subAba === 'ganho' ? 'Adicionar ganho' : 'Adicionar recebimento'}
         </button>
         <button
           onClick={() => setShowFiltros(v => !v)}
@@ -177,7 +243,7 @@ export default function ReceitasPage() {
             <div>
               <p className="text-[11px] text-muted-foreground font-medium mb-2">Categoria</p>
               <div className="flex flex-wrap gap-1.5">
-                {['Todas', ...CATEGORIAS.map(c => c.label)].map(cat => (
+                {['Todas', ...categoriasDaSubAba.map(c => c.label)].map(cat => (
                   <button key={cat} onClick={() => setFiltroCategoria(cat)}
                     className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filtroCategoria === cat ? 'bg-primary text-primary-foreground border-primary' : 'bg-secondary text-foreground border-border'}`}>
                     {cat}
@@ -235,10 +301,14 @@ export default function ReceitasPage() {
         ) : receitasFiltradas.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center mb-4">
-              <TrendingUp size={24} className="text-muted-foreground" />
+              {subAba === 'ganho' ? <TrendingUp size={24} className="text-muted-foreground" /> : <RefreshCw size={24} className="text-muted-foreground" />}
             </div>
-            <p className="text-sm font-medium text-foreground/60">{filtrosAtivos ? 'Nenhuma receita encontrada' : 'Nenhuma receita ainda'}</p>
-            <p className="text-xs text-muted-foreground mt-1">{filtrosAtivos ? 'Tente outros filtros' : 'Adicione aqui ou pelo Chat'}</p>
+            <p className="text-sm font-medium text-foreground/60">
+              {filtrosAtivos ? 'Nenhuma receita encontrada' : subAba === 'ganho' ? 'Nenhum ganho ainda' : 'Nenhum recebimento ainda'}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {filtrosAtivos ? 'Tente outros filtros' : 'Adicione aqui ou pelo Chat'}
+            </p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -277,7 +347,6 @@ export default function ReceitasPage() {
                   </div>
                 </div>
 
-                {/* Botão "Recebi!" para itens pendentes */}
                 {r.tipo === 'a_receber' && (
                   <div className="mt-2.5 pt-2.5 border-t border-border/40">
                     <button
@@ -307,7 +376,12 @@ export default function ReceitasPage() {
             onClick={e => e.stopPropagation()}>
             <div className="w-10 h-1 bg-border rounded-full mx-auto mb-1" />
             <h2 className="text-base font-bold flex items-center gap-2">
-              {editandoId ? <><Pencil size={16} className="text-primary" /> Editar Receita</> : <><TrendingUp size={18} className="text-primary" /> Registrar Receita</>}
+              {editandoId
+                ? <><Pencil size={16} className="text-primary" /> Editar Receita</>
+                : subAba === 'ganho'
+                  ? <><TrendingUp size={18} className="text-primary" /> Registrar Ganho</>
+                  : <><RefreshCw size={18} className="text-sky-400" /> Registrar Recebimento</>
+              }
             </h2>
             <div>
               <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Descrição / Fonte *</label>
@@ -318,7 +392,7 @@ export default function ReceitasPage() {
             <div>
               <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Categoria</label>
               <div className="flex flex-wrap gap-2">
-                {CATEGORIAS.map(cat => (
+                {CATEGORIAS.filter(c => c.natureza === subAba).map(cat => (
                   <button key={cat.label} onClick={() => setForm(p => ({ ...p, categoria: cat.label }))}
                     className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors flex items-center gap-1.5 ${form.categoria === cat.label ? 'bg-primary text-primary-foreground border-primary' : 'bg-secondary text-foreground border-border'}`}>
                     <cat.Icon size={12} /> {cat.label}

@@ -27,19 +27,28 @@ export default function ResumoPage() {
   const MES_ATUAL = format(new Date(), 'yyyy-MM')
   const MES_LABEL = format(new Date(), 'MMMM yyyy', { locale: ptBR })
 
-  const receitasMes = useMemo(() =>
-    receitas.filter(r => r.data.startsWith(MES_ATUAL) && r.tipo === 'recebido')
+  // Ganhos = receitas que não são "Recebimento" (dinheiro novo)
+  const ganhosMes = useMemo(() =>
+    receitas.filter(r => r.data.startsWith(MES_ATUAL) && r.tipo === 'recebido' && r.categoria !== 'Recebimento')
       .reduce((s, r) => s + Number(r.valor), 0), [receitas])
+
+  // Recebimentos = devolução/cobrança recebida (dinheiro que já era do usuário)
+  const recebimentosMes = useMemo(() =>
+    receitas.filter(r => r.data.startsWith(MES_ATUAL) && r.tipo === 'recebido' && r.categoria === 'Recebimento')
+      .reduce((s, r) => s + Number(r.valor), 0), [receitas])
+
+  const receitasMes = ganhosMes // alias para compatibilidade com o relatório
 
   const gastosMes = useMemo(() =>
     gastos.filter(g => g.data.startsWith(MES_ATUAL))
       .reduce((s, g) => s + Number(g.valor), 0), [gastos])
 
   const aReceberMes = useMemo(() =>
-    receitas.filter(r => r.data.startsWith(MES_ATUAL) && r.tipo === 'a_receber')
+    receitas.filter(r => r.data.startsWith(MES_ATUAL) && r.tipo === 'a_receber' && r.categoria !== 'Recebimento')
       .reduce((s, r) => s + Number(r.valor), 0), [receitas])
 
-  const saldoPrevisto = receitasMes + aReceberMes - gastosMes
+  // Saldo real = Ganhos - Gastos (recebimentos não entram pois não é dinheiro novo)
+  const saldoPrevisto = ganhosMes + aReceberMes - gastosMes
   const pagamentosDivida = useMemo(() =>
     dividas.reduce((s, d) => s + Number(d.valor_pago), 0), [dividas])
 
@@ -149,13 +158,13 @@ ${conselho}
               {formatBRL(saldoPrevisto)}
             </p>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <div className="bg-white/12 rounded-xl p-2.5">
                 <div className="flex items-center gap-1 mb-1">
                   <TrendingUp size={11} className="text-white/70" />
-                  <p className="text-[10px] text-white/60">Receitas</p>
+                  <p className="text-[10px] text-white/60">Ganhos</p>
                 </div>
-                <p className="font-bold text-white text-xs">{formatBRL(receitasMes + aReceberMes)}</p>
+                <p className="font-bold text-white text-xs">{formatBRL(ganhosMes + aReceberMes)}</p>
               </div>
               <div className="bg-white/12 rounded-xl p-2.5">
                 <div className="flex items-center gap-1 mb-1">
@@ -166,8 +175,15 @@ ${conselho}
               </div>
               <div className="bg-white/12 rounded-xl p-2.5">
                 <div className="flex items-center gap-1 mb-1">
+                  <ArrowUpCircle size={11} className="text-white/70" />
+                  <p className="text-[10px] text-white/60">Recebimentos</p>
+                </div>
+                <p className="font-bold text-sky-200 text-xs">{formatBRL(recebimentosMes)}</p>
+              </div>
+              <div className="bg-white/12 rounded-xl p-2.5">
+                <div className="flex items-center gap-1 mb-1">
                   <CreditCard size={11} className="text-white/70" />
-                  <p className="text-[10px] text-white/60">Dívida</p>
+                  <p className="text-[10px] text-white/60">Dívida rest.</p>
                 </div>
                 <p className="font-bold text-orange-300 text-xs">{formatBRL(totalDividas)}</p>
               </div>
@@ -196,12 +212,12 @@ ${conselho}
             </div>
             <div className="bg-card rounded-2xl p-4" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 18%)' }}>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center">
-                  <ArrowUpCircle size={13} className="text-primary" />
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#f9731620' }}>
+                  <ArrowUpCircle size={13} style={{ color: '#f97316' }} />
                 </div>
                 <p className="text-[11px] text-muted-foreground font-medium">Pgtos Dívida</p>
               </div>
-              <p className="font-bold text-primary text-lg leading-tight">{formatBRL(pagamentosDivida)}</p>
+              <p className="font-bold text-lg leading-tight" style={{ color: '#f97316' }}>{formatBRL(pagamentosDivida)}</p>
             </div>
             <div className="bg-card rounded-2xl p-4" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 18%)' }}>
               <div className="flex items-center gap-2 mb-2">

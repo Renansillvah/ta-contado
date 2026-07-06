@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Plus, Trash2, Pencil, Package, AlertTriangle, Clock, AlertCircle, CreditCard, Building2, MoreHorizontal, CheckCircle2, SlidersHorizontal, X, TrendingDown } from 'lucide-react'
+import { Plus, Trash2, Pencil, Package, AlertTriangle, Clock, AlertCircle, CreditCard, CheckCircle2, SlidersHorizontal, X, TrendingDown } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { Skeleton } from '@/components/ui/skeleton'
 import { differenceInDays, parseISO } from 'date-fns'
@@ -16,14 +16,20 @@ interface FormDivida {
 }
 
 const TIPOS = [
-  { value: 'cartao', label: 'Cartão', Icon: CreditCard },
-  { value: 'emprestimo', label: 'Empréstimo', Icon: Building2 },
-  { value: 'outros', label: 'Outros', Icon: MoreHorizontal },
+  { value: 'cartao', label: 'Cartão', emoji: '💳' },
+  { value: 'emprestimo', label: 'Empréstimo', emoji: '🏦' },
+  { value: 'outros', label: 'Outros', emoji: '📌' },
 ]
 
-function TipoIcon({ tipo, size = 16 }: { tipo: string; size?: number }) {
-  const t = TIPOS.find(x => x.value === tipo) || TIPOS[2]
-  return <t.Icon size={size} className="text-muted-foreground" />
+const TIPO_EMOJI: Record<string, string> = {
+  cartao: '💳',
+  emprestimo: '🏦',
+  cheque: '📝',
+  outros: '📌',
+}
+
+function TipoEmoji({ tipo }: { tipo: string }) {
+  return <span className="text-base leading-none">{TIPO_EMOJI[tipo] ?? '📌'}</span>
 }
 
 const FORM_VAZIO: FormDivida = {
@@ -305,7 +311,7 @@ export default function DividasPage() {
                       <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${quitada ? 'bg-primary/20' : 'bg-secondary'}`}>
                         {quitada
                           ? <CheckCircle2 size={15} className="text-primary" />
-                          : <TipoIcon tipo={d.tipo} size={15} />
+                          : <TipoEmoji tipo={d.tipo} />
                         }
                       </div>
                       <div>
@@ -390,7 +396,7 @@ export default function DividasPage() {
                 {TIPOS.map(t => (
                   <button key={t.value} onClick={() => setForm(p => ({ ...p, tipo: t.value as any }))}
                     className={`flex-1 px-3 py-2.5 rounded-xl text-xs font-medium border transition-colors flex items-center justify-center gap-1.5 ${form.tipo === t.value ? 'bg-primary text-primary-foreground border-primary' : 'bg-secondary text-foreground border-border'}`}>
-                    <t.Icon size={13} /> {t.label}
+                    <span>{t.emoji}</span> {t.label}
                   </button>
                 ))}
               </div>
