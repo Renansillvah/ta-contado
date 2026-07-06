@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect } from 'react'
-import { Plus, Trash2, UtensilsCrossed, Car, Home, Heart, Smile, ShoppingBag, BookOpen, Target, Pencil, Filter, X, Check, MapPin, ChevronDown, ChevronUp } from 'lucide-react'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { Plus, Trash2, UtensilsCrossed, Car, Home, Heart, Smile, ShoppingBag, BookOpen, Target, Pencil, Filter, X, Check, MapPin, AlertTriangle, TrendingDown, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
-import { format } from 'date-fns'
+import { format, isToday, isYesterday, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
@@ -30,6 +30,27 @@ function CatIcon({ categoria, size = 16 }: { categoria: string; size?: number })
   return <Icon size={size} className={color} />
 }
 
+function rotuloData(dataStr: string): string {
+  const d = parseISO(dataStr + 'T12:00:00')
+  if (isToday(d)) return 'Hoje'
+  if (isYesterday(d)) return 'Ontem'
+  return format(d, "EEEE, d 'de' MMM", { locale: ptBR }).replace(/^\w/, c => c.toUpperCase())
+}
+
+// Agrupa gastos por data mantendo a ordem
+function agruparPorData(lista: any[]) {
+  const grupos: { rotulo: string; data: string; itens: any[] }[] = []
+  const map = new Map<string, any[]>()
+  for (const g of lista) {
+    if (!map.has(g.data)) map.set(g.data, [])
+    map.get(g.data)!.push(g)
+  }
+  for (const [data, itens] of map.entries()) {
+    grupos.push({ rotulo: rotuloData(data), data, itens })
+  }
+  return grupos
+}
+
 export default function GastosPage() {
   const { gastos, adicionarGasto, removerGasto, loading } = useApp()
   const [showForm, setShowForm] = useState(false)
@@ -39,6 +60,7 @@ export default function GastosPage() {
     data: new Date().toISOString().split('T')[0],
   })
   const [salvando, setSalvando] = useState(false)
+  const [confirmandoId, setConfirmandoId] = useState<string | null>(null)
 
   // Meta mensal
   const [meta, setMeta] = useState(() => {
@@ -47,16 +69,16 @@ export default function GastosPage() {
   })
   const [editandoMeta, setEditandoMeta] = useState(false)
   const [metaInput, setMetaInput] = useState('')
-  const alertado80Ref = useState(false)
+  const alertadoRef = useRef(false)
 
   // Filtros
   const [filtroCategoria, setFiltroCategoria] = useState<string>('Todas')
   const [filtroMes, setFiltroMes] = useState<string>('todos')
   const [showFiltros, setShowFiltros] = useState(false)
+  const [showBreakdown, setShowBreakdown] = useState(true)
 
   const MES_ATUAL = format(new Date(), 'yyyy-MM')
 
-  // Meses disponíveis nos gastos
   const mesesDisponiveis = useMemo(() => {
     const set = new Set(gastos.map(g => g.data.substring(0, 7)))
     return Array.from(set).sort().reverse()
@@ -72,19 +94,28 @@ export default function GastosPage() {
 
   const gastosMes = useMemo(() =>
     gastos.filter(g => g.data.startsWith(MES_ATUAL)).reduce((s, g) => s + Number(g.valor), 0),
-  [gastos])
+  [gastos, MES_ATUAL])
+
+  // Comparação com mês anterior
+  const mesAnteriorKey = format(new Date(new Date().setMonth(new Date().getMonth() - 1)), 'yyyy-MM')
+  const gastosMesAnterior = useMemo(() =>
+    gastos.filter(g => g.data.startsWith(mesAnteriorKey)).reduce((s, g) => s + Number(g.valor), 0),
+  [gastos, mesAnteriorKey])
+  const variacaoMes = gastosMesAnterior > 0
+    ? ((gastosMes - gastosMesAnterior) / gastosMesAnterior) * 100
+    : null
 
   const pctMeta = meta > 0 ? Math.min((gastosMes / meta) * 100, 110) : 0
-  const barColor = pctMeta >= 90 ? 'bg-destructive' : pctMeta >= 60 ? 'bg-yellow-500' : 'bg-primary'
+  const barColor = pctMeta >= 100 ? '#ef4444' : pctMeta >= 80 ? '#f97316' : pctMeta >= 60 ? '#eab308' : 'oklch(0.62 0.18 162)'
 
   useEffect(() => {
     if (meta <= 0) return
     const pct = (gastosMes / meta) * 100
-    if (pct >= 100 && !alertado80Ref[0]) {
-      alertado80Ref[0] = true
+    if (pct >= 100 && !alertadoRef.current) {
+      alertadoRef.current = true
       toast.error('Você passou do limite!', { description: `Meta de R$ ${meta.toFixed(2).replace('.', ',')} ultrapassada.` })
-    } else if (pct >= 80 && pct < 100 && !alertado80Ref[0]) {
-      alertado80Ref[0] = true
+    } else if (pct >= 80 && pct < 100 && !alertadoRef.current) {
+      alertadoRef.current = true
       toast.warning('80% do orçamento usado!', { description: `Faltam R$ ${(meta - gastosMes).toFixed(2).replace('.', ',')} para o limite.` })
     }
   }, [gastosMes, meta])
@@ -94,7 +125,8 @@ export default function GastosPage() {
     if (v > 0) {
       localStorage.setItem('meta_mensal', String(v))
       setMeta(v)
-      alertado80Ref[0] = false
+      alertadoRef.current = false
+      toast.success('Meta definida!')
     }
     setEditandoMeta(false)
   }
@@ -110,7 +142,6 @@ export default function GastosPage() {
     setSalvando(true)
     try {
       if (editandoId) {
-        // Remove o antigo e adiciona o novo com dados atualizados
         await removerGasto(editandoId)
         await adicionarGasto({
           descricao: form.descricao,
@@ -135,7 +166,38 @@ export default function GastosPage() {
     }
   }
 
+  const confirmarRemover = async (id: string) => {
+    setConfirmandoId(id)
+  }
+
+  const removerConfirmado = async (id: string) => {
+    await removerGasto(id)
+    setConfirmandoId(null)
+  }
+
   const filtrosAtivos = filtroCategoria !== 'Todas' || filtroMes !== 'todos'
+
+  const totalFiltrado = useMemo(() =>
+    gastosFiltrados.reduce((s, g) => s + Number(g.valor), 0),
+  [gastosFiltrados])
+
+  const mesFiltroAtivo = filtroMes !== 'todos' ? filtroMes : MES_ATUAL
+  const gastosMesFiltro = useMemo(() =>
+    gastos.filter(g => g.data.startsWith(mesFiltroAtivo)).reduce((s, g) => s + Number(g.valor), 0),
+  [gastos, mesFiltroAtivo])
+
+  const breakdownMes = useMemo(() => {
+    const gastosDoPeriodo = gastos.filter(g => g.data.startsWith(mesFiltroAtivo))
+    const totalDoPeriodo = gastosDoPeriodo.reduce((s, g) => s + Number(g.valor), 0)
+    return CATEGORIAS
+      .map(cat => ({
+        ...cat,
+        total: gastosDoPeriodo.filter(g => g.categoria === cat.label).reduce((s, g) => s + Number(g.valor), 0),
+        pct: totalDoPeriodo > 0 ? (gastosDoPeriodo.filter(g => g.categoria === cat.label).reduce((s, g) => s + Number(g.valor), 0) / totalDoPeriodo) * 100 : 0,
+      }))
+      .filter(c => c.total > 0)
+      .sort((a, b) => b.total - a.total)
+  }, [gastos, mesFiltroAtivo])
 
   const formatarMes = (ym: string) => {
     const [y, m] = ym.split('-')
@@ -143,148 +205,161 @@ export default function GastosPage() {
     return `${meses[parseInt(m) - 1]} ${y}`
   }
 
-  // Total filtrado
-  const totalFiltrado = useMemo(() =>
-    gastosFiltrados.reduce((s, g) => s + Number(g.valor), 0),
-  [gastosFiltrados])
+  // Frase de contexto da meta
+  const fraseContexto = useMemo(() => {
+    if (meta > 0) {
+      if (pctMeta >= 100) return { txt: 'Você passou do limite este mês!', cor: '#ef4444' }
+      if (pctMeta >= 80) return { txt: `${pctMeta.toFixed(0)}% da meta — faltam R$ ${(meta - gastosMes).toFixed(2).replace('.', ',')}`, cor: '#f97316' }
+      if (pctMeta >= 50) return { txt: `${pctMeta.toFixed(0)}% da meta usados — ainda bem!`, cor: '#eab308' }
+      return { txt: `${pctMeta.toFixed(0)}% da meta — você está ótimo!`, cor: 'oklch(0.62 0.18 162)' }
+    }
+    if (variacaoMes !== null) {
+      if (variacaoMes <= -10) return { txt: `↓ ${Math.abs(variacaoMes).toFixed(0)}% menos que o mês passado — parabéns!`, cor: 'oklch(0.62 0.18 162)' }
+      if (variacaoMes >= 20) return { txt: `↑ ${variacaoMes.toFixed(0)}% mais que o mês passado`, cor: '#f97316' }
+    }
+    return null
+  }, [meta, pctMeta, gastosMes, variacaoMes])
 
-  // Breakdown por categoria (mês atual)
-  const [showBreakdown, setShowBreakdown] = useState(false)
-  const breakdownMes = useMemo(() => {
-    const mesFiltro = filtroMes !== 'todos' ? filtroMes : MES_ATUAL
-    const gastosMesFiltro = gastos.filter(g => g.data.startsWith(mesFiltro))
-    return CATEGORIAS
-      .map(cat => ({
-        ...cat,
-        total: gastosMesFiltro.filter(g => g.categoria === cat.label).reduce((s, g) => s + Number(g.valor), 0),
-      }))
-      .filter(c => c.total > 0)
-      .sort((a, b) => b.total - a.total)
-  }, [gastos, filtroMes])
+  const gruposVisiveis = useMemo(() => agruparPorData(gastosFiltrados), [gastosFiltrados])
 
   return (
     <div className="flex flex-col h-full">
 
-      {/* Card Meta Mensal */}
-      <div className="px-4 pt-4">
-        <div className="bg-card rounded-2xl p-4 mb-3" style={{ boxShadow: '0 1px 12px oklch(0 0 0 / 20%)' }}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center">
-                <Target size={14} className="text-primary" />
-              </div>
-              <span className="text-xs font-semibold text-foreground">Meta do mês</span>
+      {/* ── Card topo: total do mês + meta ── */}
+      <div className="px-4 pt-4 pb-2">
+        <div className="bg-card rounded-2xl p-4" style={{ boxShadow: '0 1px 12px oklch(0 0 0 / 20%)' }}>
+
+          {/* Linha principal: total + botão meta */}
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <p className="text-[11px] text-muted-foreground font-medium mb-0.5">
+                {format(new Date(), "MMMM 'de' yyyy", { locale: ptBR }).replace(/^\w/, c => c.toUpperCase())}
+              </p>
+              <p className="text-2xl font-bold text-foreground leading-tight">
+                R$ {gastosMes.toFixed(2).replace('.', ',')}
+              </p>
+              {fraseContexto && (
+                <p className="text-[11px] mt-1 font-medium" style={{ color: fraseContexto.cor }}>
+                  {fraseContexto.txt}
+                </p>
+              )}
+              {!fraseContexto && !meta && (
+                <p className="text-[11px] text-muted-foreground mt-1">gastos este mês</p>
+              )}
             </div>
-            <button
-              onClick={() => { setMetaInput(meta > 0 ? String(meta) : ''); setEditandoMeta(true) }}
-              className="flex items-center gap-1 text-xs text-primary font-medium"
-            >
-              <Pencil size={11} />
-              {meta > 0 ? 'Editar' : 'Definir meta'}
-            </button>
+            <div className="flex flex-col items-end gap-1.5">
+              <button
+                onClick={() => { setMetaInput(meta > 0 ? String(meta) : ''); setEditandoMeta(true) }}
+                className="flex items-center gap-1 text-[11px] text-primary font-medium px-2.5 py-1.5 rounded-xl bg-primary/10"
+              >
+                <Target size={11} />
+                {meta > 0 ? `Meta: R$ ${meta.toFixed(0)}` : 'Definir meta'}
+              </button>
+              {variacaoMes !== null && (
+                <span className="text-[10px] flex items-center gap-0.5" style={{ color: variacaoMes <= 0 ? 'oklch(0.62 0.18 162)' : '#f97316' }}>
+                  {variacaoMes <= 0 ? <TrendingDown size={10} /> : <TrendingUp size={10} />}
+                  {variacaoMes > 0 ? '+' : ''}{variacaoMes.toFixed(0)}% vs mês ant.
+                </span>
+              )}
+            </div>
           </div>
-          {editandoMeta ? (
-            <div className="flex gap-2">
+
+          {/* Barra de meta */}
+          {meta > 0 && !editandoMeta && (
+            <div>
+              <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(pctMeta, 100)}%`, backgroundColor: barColor }}
+                />
+              </div>
+              <div className="flex justify-between mt-1">
+                <span className="text-[10px] text-muted-foreground">{pctMeta.toFixed(0)}% usado</span>
+                <span className="text-[10px] text-muted-foreground">limite R$ {meta.toFixed(0)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Input inline de meta */}
+          {editandoMeta && (
+            <div className="flex gap-2 mt-1">
               <input type="number" placeholder="Limite do mês (R$)" value={metaInput}
                 onChange={e => setMetaInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && salvarMeta()} autoFocus
-                className="flex-1 bg-secondary rounded-xl px-3 py-2.5 text-sm outline-none border border-border focus:border-primary transition-colors"
+                className="flex-1 bg-secondary rounded-xl px-3 py-2 text-sm outline-none border border-border focus:border-primary transition-colors"
               />
               <button onClick={salvarMeta} className="bg-primary text-primary-foreground rounded-xl px-4 py-2 text-sm font-semibold">OK</button>
+              <button onClick={() => setEditandoMeta(false)} className="text-muted-foreground px-2 text-sm">✕</button>
             </div>
-          ) : meta > 0 ? (
-            <>
-              <div className="flex justify-between items-baseline mb-2">
-                <span className="text-lg font-bold">R$ {gastosMes.toFixed(2).replace('.', ',')}</span>
-                <span className="text-xs text-muted-foreground">de R$ {meta.toFixed(2).replace('.', ',')}</span>
-              </div>
-              <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${Math.min(pctMeta, 100)}%` }} />
-              </div>
-              <p className="text-[11px] text-muted-foreground mt-2">
-                {pctMeta >= 100 ? 'Você passou do limite!' : pctMeta >= 80
-                  ? `${pctMeta.toFixed(0)}% usado — faltam R$ ${(meta - gastosMes).toFixed(2).replace('.', ',')}`
-                  : `${pctMeta.toFixed(0)}% do limite usado`}
-              </p>
-            </>
-          ) : (
-            <p className="text-xs text-muted-foreground">Defina uma meta para acompanhar seus gastos do mês.</p>
           )}
         </div>
       </div>
 
-      {/* Card Breakdown por Categoria */}
+      {/* ── Breakdown por categoria (aberto por padrão) ── */}
       {breakdownMes.length > 0 && (
         <div className="px-4 pb-2">
-          <div className="bg-card rounded-2xl overflow-hidden" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 18%)' }}>
+          <div className="bg-card rounded-2xl overflow-hidden" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 15%)' }}>
             <button
               onClick={() => setShowBreakdown(v => !v)}
-              className="w-full flex items-center justify-between px-4 py-3"
+              className="w-full flex items-center justify-between px-4 py-2.5"
             >
+              <span className="text-xs font-semibold text-foreground">Por categoria</span>
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-primary/15 flex items-center justify-center">
-                  <Filter size={12} className="text-primary" />
-                </div>
-                <span className="text-xs font-semibold text-foreground">Por categoria</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">
+                <span className="text-[11px] text-muted-foreground">
                   {filtroMes !== 'todos' ? formatarMes(filtroMes) : 'Este mês'}
                 </span>
-                {showBreakdown ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
+                {showBreakdown ? <ChevronUp size={13} className="text-muted-foreground" /> : <ChevronDown size={13} className="text-muted-foreground" />}
               </div>
             </button>
             {showBreakdown && (
-              <div className="px-4 pb-3 space-y-2 border-t border-border/30">
-                {breakdownMes.map(cat => {
-                  const pct = gastosMes > 0 ? (cat.total / gastosMes) * 100 : 0
-                  return (
-                    <div key={cat.label} className="flex items-center gap-3 pt-2">
-                      <div className="w-7 h-7 rounded-lg bg-secondary flex items-center justify-center shrink-0">
-                        <cat.Icon size={13} className={cat.color} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-baseline mb-1">
-                          <span className="text-xs font-medium truncate">{cat.label}</span>
-                          <span className="text-xs font-bold text-foreground ml-2 shrink-0">R$ {cat.total.toFixed(2).replace('.', ',')}</span>
-                        </div>
-                        <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-500"
-                            style={{ width: `${pct}%`, backgroundColor: 'oklch(0.62 0.18 162)' }}
-                          />
-                        </div>
-                      </div>
-                      <span className="text-[10px] text-muted-foreground shrink-0 w-8 text-right">{pct.toFixed(0)}%</span>
+              <div className="px-4 pb-3 space-y-2.5 border-t border-border/30 pt-2">
+                {breakdownMes.map(cat => (
+                  <div key={cat.label} className="flex items-center gap-2.5">
+                    <div className="w-6 h-6 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                      <cat.Icon size={12} className={cat.color} />
                     </div>
-                  )
-                })}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-baseline mb-0.5">
+                        <span className="text-[11px] font-medium truncate">{cat.label}</span>
+                        <span className="text-[11px] font-bold ml-2 shrink-0">R$ {cat.total.toFixed(2).replace('.', ',')}</span>
+                      </div>
+                      <div className="h-1 bg-secondary rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{ width: `${cat.pct}%`, backgroundColor: 'oklch(0.62 0.18 162)' }}
+                        />
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground w-7 text-right shrink-0">{cat.pct.toFixed(0)}%</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Botões ação + filtro */}
-      <div className="px-4 pb-3 flex gap-2">
+      {/* ── Botões ação + filtro ── */}
+      <div className="px-4 pb-2 flex gap-2">
         <button
           onClick={() => { setForm({ descricao: '', valor: '', categoria: 'Alimentação', data: new Date().toISOString().split('T')[0] }); setEditandoId(null); setShowForm(true) }}
-          className="flex-1 bg-primary text-primary-foreground rounded-2xl py-3 font-semibold flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-transform"
+          className="flex-1 bg-primary text-primary-foreground rounded-2xl py-3.5 font-semibold flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-transform"
         >
           <Plus size={17} strokeWidth={2.5} /> Adicionar gasto
         </button>
         <button
           onClick={() => setShowFiltros(!showFiltros)}
-          className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors relative ${filtrosAtivos ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground border border-border'}`}
+          className="relative w-12 h-12 rounded-2xl flex items-center justify-center transition-colors shrink-0"
+          style={{ backgroundColor: showFiltros || filtrosAtivos ? 'oklch(0.62 0.18 162)' : 'oklch(0.25 0.04 240)' }}
         >
-          <Filter size={16} />
-          {filtrosAtivos && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-primary rounded-full border-2 border-background" />}
+          <Filter size={16} className={showFiltros || filtrosAtivos ? 'text-white' : 'text-muted-foreground'} />
+          {filtrosAtivos && !showFiltros && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-orange-400" />}
         </button>
       </div>
 
-      {/* Painel de Filtros */}
+      {/* ── Painel de filtros ── */}
       {showFiltros && (
-        <div className="mx-4 mb-3 bg-card rounded-2xl p-4 space-y-3" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 18%)' }}>
+        <div className="mx-4 mb-2 bg-card rounded-2xl p-3.5 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 18%)' }}>
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-foreground">Filtros</span>
             {filtrosAtivos && (
@@ -294,11 +369,6 @@ export default function GastosPage() {
               </button>
             )}
           </div>
-          {filtrosAtivos && gastosFiltrados.length > 0 && (
-            <p className="text-[11px] text-muted-foreground mt-1">
-              {gastosFiltrados.length} resultado{gastosFiltrados.length !== 1 ? 's' : ''} · Total: <span className="text-destructive font-semibold">R$ {totalFiltrado.toFixed(2).replace('.', ',')}</span>
-            </p>
-          )}
           <div>
             <p className="text-[11px] text-muted-foreground mb-1.5 font-medium">Categoria</p>
             <div className="flex flex-wrap gap-1.5">
@@ -320,7 +390,7 @@ export default function GastosPage() {
                 </button>
                 {mesesDisponiveis.map(mes => (
                   <button key={mes} onClick={() => setFiltroMes(mes)}
-                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors capitalize ${filtroMes === mes ? 'bg-primary text-primary-foreground border-primary' : 'bg-secondary text-foreground border-border'}`}>
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${filtroMes === mes ? 'bg-primary text-primary-foreground border-primary' : 'bg-secondary text-foreground border-border'}`}>
                     {format(new Date(mes + '-15'), 'MMM/yy', { locale: ptBR })}
                   </button>
                 ))}
@@ -330,10 +400,22 @@ export default function GastosPage() {
         </div>
       )}
 
-      {/* Lista */}
+      {/* ── Total filtrado (sempre visível quando filtros ativos) ── */}
+      {filtrosAtivos && gastosFiltrados.length > 0 && (
+        <div className="px-5 pb-2 flex items-center justify-between">
+          <span className="text-[11px] text-muted-foreground">
+            {gastosFiltrados.length} resultado{gastosFiltrados.length !== 1 ? 's' : ''}
+          </span>
+          <span className="text-[11px] font-semibold text-destructive">
+            Total: R$ {totalFiltrado.toFixed(2).replace('.', ',')}
+          </span>
+        </div>
+      )}
+
+      {/* ── Lista agrupada por data ── */}
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         {loading ? (
-          <div className="space-y-2.5">{[1,2,3].map(i => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}</div>
+          <div className="space-y-2.5">{[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}</div>
         ) : gastosFiltrados.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center mb-4">
@@ -343,30 +425,75 @@ export default function GastosPage() {
             <p className="text-xs text-muted-foreground mt-1">{filtrosAtivos ? 'Tente outros filtros' : 'Adicione aqui ou pelo Chat'}</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {gastosFiltrados.map(g => (
-              <div key={g.id} className="bg-card rounded-2xl px-4 py-3.5 flex items-center justify-between animate-in fade-in slide-in-from-bottom-2 duration-300"
-                style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 15%)' }}>
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-secondary flex items-center justify-center shrink-0">
-                    <CatIcon categoria={g.categoria} size={16} />
-                  </div>
-                  <div>
-                    <p className="font-medium text-sm leading-tight">{g.descricao}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {g.categoria} · {format(new Date(g.data + 'T12:00:00'), "d 'de' MMM", { locale: ptBR })}
-                    </p>
-                  </div>
+          <div className="space-y-4">
+            {gruposVisiveis.map(grupo => (
+              <div key={grupo.data}>
+                {/* Cabeçalho do grupo */}
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    {grupo.rotulo}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">
+                    R$ {grupo.itens.reduce((s, g) => s + Number(g.valor), 0).toFixed(2).replace('.', ',')}
+                  </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-destructive text-sm">−R$ {Number(g.valor).toFixed(2).replace('.', ',')}</span>
-                  <button onClick={() => abrirEditar(g)} className="text-muted-foreground hover:text-primary transition-colors p-1">
-                    <Pencil size={13} />
-                  </button>
-                  <button onClick={() => { if (window.confirm('Apagar este gasto?')) removerGasto(g.id) }}
-                    className="text-muted-foreground hover:text-destructive transition-colors p-1">
-                    <Trash2 size={13} />
-                  </button>
+
+                {/* Itens do grupo */}
+                <div className="space-y-2">
+                  {grupo.itens.map(g => (
+                    <div key={g.id}>
+                      {confirmandoId === g.id ? (
+                        /* Mini confirmação inline */
+                        <div
+                          className="rounded-2xl px-4 py-3 flex items-center justify-between animate-in fade-in duration-150"
+                          style={{ background: '#ef444415', border: '1px solid #ef444430' }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle size={14} className="text-destructive shrink-0" />
+                            <p className="text-sm font-medium text-destructive">Apagar "{g.descricao}"?</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setConfirmandoId(null)}
+                              className="text-xs px-3 py-1.5 rounded-xl bg-secondary text-foreground font-medium"
+                            >
+                              Não
+                            </button>
+                            <button
+                              onClick={() => removerConfirmado(g.id)}
+                              className="text-xs px-3 py-1.5 rounded-xl bg-destructive text-white font-semibold"
+                            >
+                              Apagar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          className="bg-card rounded-2xl px-4 py-3 flex items-center justify-between animate-in fade-in slide-in-from-bottom-1 duration-300"
+                          style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 13%)' }}
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="w-9 h-9 rounded-xl bg-secondary flex items-center justify-center shrink-0">
+                              <CatIcon categoria={g.categoria} size={16} />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium text-sm leading-tight truncate">{g.descricao}</p>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">{g.categoria}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                            <span className="font-bold text-destructive text-sm">−R$ {Number(g.valor).toFixed(2).replace('.', ',')}</span>
+                            <button onClick={() => abrirEditar(g)} className="text-muted-foreground hover:text-primary transition-colors p-1">
+                              <Pencil size={13} />
+                            </button>
+                            <button onClick={() => confirmarRemover(g.id)} className="text-muted-foreground hover:text-destructive transition-colors p-1">
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
@@ -374,7 +501,7 @@ export default function GastosPage() {
         )}
       </div>
 
-      {/* Modal form */}
+      {/* ── Modal form ── */}
       {showForm && (
         <div className="fixed inset-0 bg-black/75 flex items-end justify-center z-50" onClick={() => { setShowForm(false); setEditandoId(null) }}>
           <div className="bg-card rounded-t-3xl w-full max-w-lg p-5 pb-8 space-y-4"
@@ -388,7 +515,8 @@ export default function GastosPage() {
               <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Descrição *</label>
               <input type="text" placeholder="Ex: Almoço, Uber, Academia..." value={form.descricao}
                 onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))}
-                className="w-full bg-secondary rounded-xl px-4 py-3 text-sm outline-none border border-border focus:border-primary transition-colors" />
+                className="w-full bg-secondary rounded-xl px-4 py-3 text-sm outline-none border border-border focus:border-primary transition-colors"
+                autoFocus />
             </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Categoria</label>
