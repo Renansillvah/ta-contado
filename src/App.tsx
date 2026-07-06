@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MessageSquare, Receipt, CreditCard, TrendingUp, BarChart2, Menu, X, User, Target, Calendar, MessageCircle, Share2, FileText, Download, Trash2, ChevronRight } from 'lucide-react'
+import { MessageSquare, Receipt, CreditCard, TrendingUp, BarChart2, X, User, Target, Calendar, MessageCircle, Share2, FileText, Download, Trash2, ChevronRight } from 'lucide-react'
 import { AppProvider, useApp } from '@/context/AppContext'
 import ChatPage from '@/pages/ChatPage'
 import GastosPage from '@/pages/GastosPage'
