@@ -19,6 +19,7 @@ import { WhatsAppConnect } from '@/components/WhatsAppConnect'
 import { Toaster } from 'sonner'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
+import { salvarPerfil, restaurarDoSupabase, onboardingConcluido } from '@/lib/onboardingPerfil'
 import type { User } from '@supabase/supabase-js'
 
 type Tab = 'chat' | 'gastos' | 'dividas' | 'receitas' | 'resumo'
@@ -564,19 +565,32 @@ function Root() {
   )
 
   useEffect(() => {
-    // Sessão existente
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      const u = session?.user ?? null
+      setUser(u)
+
+      // Se logado e onboarding não está no localStorage, tenta restaurar do Supabase
+      if (u && !onboardingConcluido()) {
+        const restaurou = await restaurarDoSupabase()
+        if (restaurou) {
+          // Marca todas as etapas como já vistas para não reexibir
+          setShowSplash(false)
+          setShowNome(false)
+          setShowDesafio(false)
+          setShowComplementar(false)
+          setShowConclusao(false)
+        }
+      }
+
       setAuthLoading(false)
     })
 
-    // Listener para mudanças de auth (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const finalizarSplash = () => {
     localStorage.setItem('splash_visto', '1')
@@ -604,9 +618,12 @@ function Root() {
     setShowConclusao(true)
   }
 
-  const finalizarConclusao = () => {
-    localStorage.setItem('onboarding_concluido', '1')
-    localStorage.setItem('onboarding_done', '1')
+  const finalizarConclusao = async () => {
+    await salvarPerfil({
+      nome:          nomeOnboarding,
+      desafio:       desafioOnboarding ?? '',
+      respostaCompl: respostaOnboarding,
+    })
     setShowConclusao(false)
   }
 
