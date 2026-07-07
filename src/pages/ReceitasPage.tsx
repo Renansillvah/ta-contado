@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Plus, Trash2, Pencil, Briefcase, Wrench, Home, ShoppingCart, TrendingUp, Mic2, Bike, Video, Package, CheckCircle, Clock, SlidersHorizontal, X, Zap, RefreshCw, AlertTriangle, CalendarClock, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
+import { Plus, Trash2, Pencil, Briefcase, Wrench, Home, ShoppingCart, TrendingUp, Mic2, Bike, Video, Package, CheckCircle, Clock, SlidersHorizontal, X, Zap, RefreshCw, AlertTriangle, CalendarClock, ChevronDown, ChevronUp, Save } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { format, isToday, isYesterday, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -84,9 +84,52 @@ export default function ReceitasPage() {
   const [marcandoId, setMarcandoId] = useState<string | null>(null)
   const [confirmandoId, setConfirmandoId] = useState<string | null>(null)
   const [gruposExpandidos, setGruposExpandidos] = useState<Record<string, boolean>>({})
+  const [editandoGrupo, setEditandoGrupo] = useState<{
+    chave: string
+    nomeAtual: string
+    valorParcelaAtual: number
+    parcelas: any[]
+    total: number
+  } | null>(null)
+  const [editGrupoForm, setEditGrupoForm] = useState({ nome: '', valorParcela: '' })
+  const [salvandoGrupo, setSalvandoGrupo] = useState(false)
 
   const toggleGrupo = (chave: string) =>
     setGruposExpandidos(prev => ({ ...prev, [chave]: !prev[chave] }))
+
+  const abrirEditarGrupo = (g: typeof gruposParcelados[0]) => {
+    setEditandoGrupo({ chave: g.chave, nomeAtual: g.base, valorParcelaAtual: g.valorParcela, parcelas: g.parcelas, total: g.total })
+    setEditGrupoForm({ nome: g.base, valorParcela: String(g.valorParcela.toFixed(2)).replace('.', ',') })
+  }
+
+  const salvarEdicaoGrupo = async () => {
+    if (!editandoGrupo) return
+    const novoNome = editGrupoForm.nome.trim()
+    const novoValor = parseFloat(editGrupoForm.valorParcela.replace(',', '.'))
+    if (!novoNome || isNaN(novoValor) || novoValor <= 0) return
+
+    setSalvandoGrupo(true)
+    try {
+      for (let i = 0; i < editandoGrupo.parcelas.length; i++) {
+        const p = editandoGrupo.parcelas[i]
+        const parc = extrairParcela(p.descricao)
+        const novaDesc = editandoGrupo.total > 1
+          ? `${novoNome} (${parc?.atual ?? i + 1}/${editandoGrupo.total}x)`
+          : novoNome
+        await removerReceita(p.id)
+        await adicionarReceita({
+          descricao: novaDesc,
+          categoria: 'Recebimento',
+          valor: novoValor,
+          tipo: p.tipo,
+          data: p.data,
+        })
+      }
+      setEditandoGrupo(null)
+    } finally {
+      setSalvandoGrupo(false)
+    }
+  }
 
   const receitasGanhos = useMemo(() =>
     receitas.filter(r => categoriaNatureza(r.categoria) === 'ganho'),
@@ -356,8 +399,9 @@ export default function ReceitasPage() {
         style={{ border: '1.5px solid oklch(0.55 0.18 230 / 30%)', background: 'var(--card)', boxShadow: '0 1px 8px oklch(0 0 0 / 13%)' }}
       >
         {/* Cabeçalho — clicável para expandir */}
+        <div className="flex items-center pr-3">
         <button
-          className="w-full px-4 py-3.5 flex items-center gap-3 text-left"
+          className="flex-1 px-4 py-3.5 flex items-center gap-3 text-left"
           onClick={() => toggleGrupo(g.chave)}
         >
           {/* Ícone */}
@@ -412,6 +456,15 @@ export default function ReceitasPage() {
             : <ChevronDown size={15} className="text-muted-foreground shrink-0" />
           }
         </button>
+        {/* Botão editar fora do botão expandir */}
+        <button
+          onClick={() => abrirEditarGrupo(g)}
+          className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors shrink-0"
+          style={{ background: 'oklch(0.55 0.18 230 / 12%)' }}
+        >
+          <Pencil size={13} style={{ color: 'oklch(0.65 0.16 230)' }} />
+        </button>
+        </div>
 
         {/* Barra de progresso */}
         <div className="px-4 pb-3">
@@ -886,6 +939,80 @@ export default function ReceitasPage() {
               <button onClick={salvar} disabled={salvando}
                 className="flex-1 bg-primary text-primary-foreground rounded-xl py-3.5 text-sm font-semibold disabled:opacity-50 active:scale-[0.98] transition-transform">
                 {salvando ? 'Salvando...' : editandoId ? 'Atualizar' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal editar grupo parcelado ── */}
+      {editandoGrupo && (
+        <div className="fixed inset-0 bg-black/75 flex items-end justify-center z-50" onClick={() => setEditandoGrupo(null)}>
+          <div
+            className="bg-card rounded-t-3xl w-full max-w-lg p-5 pb-8 space-y-4"
+            style={{ boxShadow: '0 -4px 30px oklch(0 0 0 / 40%)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 bg-border rounded-full mx-auto mb-1" />
+            <div className="flex items-center gap-2">
+              <CalendarClock size={18} style={{ color: 'oklch(0.65 0.16 230)' }} />
+              <h2 className="text-base font-bold text-foreground">Editar recebimento</h2>
+            </div>
+
+            <div
+              className="rounded-xl px-3 py-2.5 text-[11px]"
+              style={{ background: 'oklch(0.55 0.18 230 / 10%)', color: 'oklch(0.65 0.16 230)' }}
+            >
+              Editará o nome e valor de todas as {editandoGrupo.total} parcelas
+            </div>
+
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block font-medium">Nome do recebimento *</label>
+              <input
+                type="text"
+                placeholder="Ex: Cheque da obra, João Silva..."
+                value={editGrupoForm.nome}
+                onChange={e => setEditGrupoForm(p => ({ ...p, nome: e.target.value }))}
+                className="w-full bg-secondary rounded-xl px-4 py-3 text-sm outline-none border border-border focus:border-primary transition-colors"
+                autoFocus
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block font-medium">
+                Valor por parcela (R$) *
+                <span className="ml-1 text-muted-foreground/60">
+                  · Total: R$ {
+                    (() => {
+                      const v = parseFloat(editGrupoForm.valorParcela.replace(',', '.'))
+                      return isNaN(v) ? '—' : (v * editandoGrupo.total).toFixed(2).replace('.', ',')
+                    })()
+                  }
+                </span>
+              </label>
+              <input
+                type="number"
+                placeholder="0,00"
+                value={editGrupoForm.valorParcela}
+                onChange={e => setEditGrupoForm(p => ({ ...p, valorParcela: e.target.value }))}
+                className="w-full bg-secondary rounded-xl px-4 py-3 text-sm outline-none border border-border focus:border-primary transition-colors"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setEditandoGrupo(null)}
+                className="flex-1 bg-secondary text-foreground rounded-xl py-3.5 text-sm font-medium active:scale-[0.98] transition-transform"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarEdicaoGrupo}
+                disabled={salvandoGrupo || !editGrupoForm.nome.trim()}
+                className="flex-1 text-white rounded-xl py-3.5 text-sm font-semibold disabled:opacity-50 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
+                style={{ backgroundColor: 'oklch(0.55 0.18 230)' }}
+              >
+                {salvandoGrupo ? <Clock size={14} className="animate-spin" /> : <><Save size={14} /> Salvar</>}
               </button>
             </div>
           </div>

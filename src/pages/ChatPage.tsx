@@ -390,6 +390,11 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
   const [offline, setOffline] = useState(!navigator.onLine)
   const [processando, setProcessando] = useState(false)
   const [chipsVisiveis, setChipsVisiveis] = useState(true)
+  const [aguardandoNomeRecebimento, setAguardandoNomeRecebimento] = useState<{
+    valor_total: number
+    parcelas: number
+    comentario: string
+  } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
@@ -594,6 +599,26 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [mensagens])
 
+  // Lista de descrições genéricas que a IA costuma retornar quando o usuário não especifica o nome
+  const DESCRICOES_GENERICAS = ['recebimento', 'recebimentos', 'parcela', 'parcelas', 'valor', 'pagamento', 'entrada']
+
+  const registrarParcelado = async (descricao: string, valor_total: number, parcelas: number, comentario: string) => {
+    const valorParcela = valor_total / parcelas
+    const hoje2 = new Date()
+    for (let i = 0; i < parcelas; i++) {
+      const dataVenc = new Date(hoje2.getFullYear(), hoje2.getMonth() + i, hoje2.getDate())
+      const dataStr = dataVenc.toISOString().split('T')[0]
+      await adicionarReceita({
+        descricao: parcelas > 1 ? `${descricao} (${i + 1}/${parcelas}x)` : descricao,
+        categoria: 'Recebimento',
+        valor: valorParcela,
+        tipo: 'a_receber',
+        data: dataStr,
+      })
+    }
+    return valorParcela
+  }
+
   const enviarTexto = async (texto: string) => {
     if (!texto.trim() || processando) return
 
@@ -605,6 +630,34 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
     }
     setMensagens(prev => [...prev, msgUsuario])
     setChipsVisiveis(false)
+
+    // Se estamos aguardando o nome do recebimento, usa o texto como nome
+    if (aguardandoNomeRecebimento) {
+      const { valor_total, parcelas, comentario } = aguardandoNomeRecebimento
+      const nomeInformado = texto.trim()
+      setAguardandoNomeRecebimento(null)
+      setProcessando(true)
+      try {
+        const valorParcela = await registrarParcelado(nomeInformado, valor_total, parcelas, comentario)
+        setMensagens(prev => [...prev, {
+          id: (Date.now() + 1).toString(),
+          tipo: 'assistente',
+          conteudo: `"${nomeInformado}" registrado! ${parcelas}x de R$ ${fmtValor(valorParcela)}. ${comentario}\n\nVeja e marque cada parcela como recebida em **Receitas > Recebimentos**.`,
+          timestamp: new Date(),
+        }])
+      } catch {
+        setMensagens(prev => [...prev, {
+          id: (Date.now() + 1).toString(),
+          tipo: 'assistente',
+          conteudo: 'Não consegui salvar. Tente novamente.',
+          timestamp: new Date(),
+        }])
+      } finally {
+        setProcessando(false)
+      }
+      return
+    }
+
     setProcessando(true)
 
     try {
@@ -634,21 +687,17 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
         resposta = `R$ ${fmtValor(intencao.valor)} de ${intencao.descricao} registrado.\n${intencao.comentario}`
       } else if (intencao.acao === 'recebimento_parcelado') {
         const parcelas = intencao.parcelas || 1
-        const valorParcela = intencao.valor_total / parcelas
-        const hoje2 = new Date()
-        // Cria uma receita "a_receber" para cada parcela, com datas mensais
-        for (let i = 0; i < parcelas; i++) {
-          const dataVenc = new Date(hoje2.getFullYear(), hoje2.getMonth() + i, hoje2.getDate())
-          const dataStr = dataVenc.toISOString().split('T')[0]
-          await adicionarReceita({
-            descricao: parcelas > 1 ? `${intencao.descricao} (${i + 1}/${parcelas}x)` : intencao.descricao,
-            categoria: 'Recebimento',
-            valor: valorParcela,
-            tipo: 'a_receber',
-            data: dataStr,
-          })
+        const descricaoLower = intencao.descricao.trim().toLowerCase()
+        const isGenerica = DESCRICOES_GENERICAS.some(g => descricaoLower === g || descricaoLower === g + 's')
+
+        if (isGenerica) {
+          // Guarda os dados e pede o nome
+          setAguardandoNomeRecebimento({ valor_total: intencao.valor_total, parcelas, comentario: intencao.comentario })
+          resposta = `Anotei! ${parcelas}x de R$ ${fmtValor(intencao.valor_total / parcelas)}.\n\nMas preciso saber: **de quem ou o quê** você vai receber? Pode me dizer o nome? (ex: "Cheque da obra", "João Silva", "Venda do carro")`
+        } else {
+          const valorParcela = await registrarParcelado(intencao.descricao, intencao.valor_total, parcelas, intencao.comentario)
+          resposta = `Registrei ${parcelas}x de R$ ${fmtValor(valorParcela)} para receber. ${intencao.comentario}\n\nVeja e marque cada parcela como recebida em **Receitas > Recebimentos**.`
         }
-        resposta = `Registrei ${parcelas}x de R$ ${fmtValor(valorParcela)} para receber nos próximos meses. ${intencao.comentario}\n\nVocê pode ver e marcar cada parcela como recebida na aba **Receitas > Recebimentos**.`
       } else if (intencao.acao === 'divida') {
         const isParcelado = !!intencao.parcelado
         await adicionarDivida({
