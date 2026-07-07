@@ -22,11 +22,21 @@ import { useApp } from '@/context/AppContext'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
+interface DadosUau {
+  categoria: 'gasto' | 'receita' | 'divida'
+  emoji: string
+  label: string
+  valor: number
+  insight: string
+  followUp: string
+}
+
 interface Mensagem {
   id: string
-  tipo: 'usuario' | 'assistente'
+  tipo: 'usuario' | 'assistente' | 'uau'
   conteudo: string
   timestamp: Date
+  uau?: DadosUau
 }
 
 type IntencaoIA =
@@ -270,6 +280,60 @@ const CHIPS_INICIAIS = [
   { label: 'Ver meu resumo', input: 'Resumo do mês' },
 ]
 
+const KEY_UAU = 'chat_momento_uau_exibido'
+
+function gerarUau(
+  acao: 'gasto' | 'receita' | 'divida',
+  descricao: string,
+  valor: number,
+  categoria: string,
+): DadosUau | null {
+  // Só dispara uma vez — no primeiro registro de qualquer tipo
+  if (localStorage.getItem(KEY_UAU)) return null
+  localStorage.setItem(KEY_UAU, '1')
+
+  const fmt = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  if (acao === 'divida') {
+    const meses = Math.ceil(valor / 500)
+    return {
+      categoria: 'divida',
+      emoji: '💳',
+      label: descricao,
+      valor,
+      insight: `💡 Se você separar aproximadamente R$ 500 por mês, poderá quitar essa dívida em cerca de ${meses} ${meses === 1 ? 'mês' : 'meses'}.`,
+      followUp: 'Quer adicionar mais dívidas para eu calcular sua situação completa?',
+    }
+  }
+
+  if (acao === 'receita') {
+    const reserva = Math.round(valor * 0.1 / 10) * 10
+    return {
+      categoria: 'receita',
+      emoji: '💰',
+      label: descricao,
+      valor,
+      insight: `💡 Você acabou de registrar sua primeira receita.\n\nGuardar pelo menos 10% — cerca de R$ ${fmt(reserva)} — é um ótimo começo para uma reserva de emergência.`,
+      followUp: 'Quer registrar seus gastos para eu calcular quanto sobra no final do mês?',
+    }
+  }
+
+  // gasto
+  const emojiMap: Record<string, string> = {
+    Alimentação: '🍽️', Transporte: '🚗', Saúde: '💊',
+    Lazer: '🎬', Compras: '🛍️', Moradia: '🏠',
+    Educação: '📚', Outros: '📌',
+  }
+  return {
+    categoria: 'gasto',
+    emoji: emojiMap[categoria] ?? '📌',
+    label: descricao,
+    valor,
+    insight: `💡 Você acabou de registrar seu primeiro gasto.\n\nSe continuar registrando seus gastos diariamente, conseguirei mostrar exatamente para onde seu dinheiro está indo.`,
+    followUp: 'Quer definir uma meta de gastos para este mês?',
+  }
+}
+
 interface ChatPageProps {
   inputInicial?: string
   onInputInicialUsado?: () => void
@@ -358,12 +422,30 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
 
       if (intencao.acao === 'gasto') {
         await adicionarGasto({ descricao: intencao.descricao, valor: intencao.valor, categoria: intencao.categoria, data: hoje })
+        const uau = gerarUau('gasto', intencao.descricao, intencao.valor, intencao.categoria)
+        if (uau) {
+          setMensagens(prev => [...prev, { id: (Date.now() + 1).toString(), tipo: 'uau', conteudo: '', timestamp: new Date(), uau }])
+          setProcessando(false)
+          return
+        }
         resposta = `R$ ${fmtValor(intencao.valor)} em ${intencao.categoria} anotado.\n${intencao.comentario}`
       } else if (intencao.acao === 'receita') {
         await adicionarReceita({ descricao: intencao.descricao, categoria: intencao.categoria, valor: intencao.valor, tipo: 'recebido', data: hoje })
+        const uau = gerarUau('receita', intencao.descricao, intencao.valor, intencao.categoria)
+        if (uau) {
+          setMensagens(prev => [...prev, { id: (Date.now() + 1).toString(), tipo: 'uau', conteudo: '', timestamp: new Date(), uau }])
+          setProcessando(false)
+          return
+        }
         resposta = `R$ ${fmtValor(intencao.valor)} de ${intencao.descricao} registrado.\n${intencao.comentario}`
       } else if (intencao.acao === 'divida') {
         await adicionarDivida({ nome: intencao.descricao, tipo: 'outros', valor_total: intencao.valor, valor_pago: 0, parcelado: false })
+        const uau = gerarUau('divida', intencao.descricao, intencao.valor, 'outros')
+        if (uau) {
+          setMensagens(prev => [...prev, { id: (Date.now() + 1).toString(), tipo: 'uau', conteudo: '', timestamp: new Date(), uau }])
+          setProcessando(false)
+          return
+        }
         resposta = `R$ ${fmtValor(intencao.valor)} de ${intencao.descricao} anotado.\n${intencao.comentario}`
       } else if (intencao.acao === 'resumo') {
         const saldo = totalReceitas - totalGastos
@@ -469,6 +551,12 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
 
   return (
     <div className="flex flex-col h-full">
+      <style>{`
+        @keyframes uauEntrada {
+          0%   { opacity: 0; transform: translateY(12px) scale(0.97); }
+          100% { opacity: 1; transform: translateY(0)    scale(1);    }
+        }
+      `}</style>
       {/* Banner offline */}
       {offline && (
         <div className="flex items-center gap-2 px-4 py-2.5 bg-destructive/12 border-b border-destructive/20 text-destructive text-xs font-medium">
@@ -478,7 +566,74 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
 
       {/* Mensagens */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-        {mensagens.map(msg => (
+        {mensagens.map(msg => {
+          // ── Mensagem UAU ────────────────────────────────────────
+          if (msg.tipo === 'uau' && msg.uau) {
+            const u = msg.uau
+            const corBg = u.categoria === 'divida'
+              ? 'oklch(0.58 0.14 205 / 12%)'
+              : u.categoria === 'receita'
+              ? 'oklch(0.48 0.16 162 / 12%)'
+              : 'oklch(0.48 0.16 162 / 10%)'
+            const corBorda = u.categoria === 'divida'
+              ? 'oklch(0.58 0.14 205 / 35%)'
+              : 'oklch(0.55 0.18 162 / 35%)'
+            const corValor = u.categoria === 'divida'
+              ? 'oklch(0.58 0.14 205)'
+              : u.categoria === 'receita'
+              ? 'oklch(0.62 0.18 162)'
+              : 'oklch(0.60 0.20 20)'
+
+            return (
+              <div key={msg.id} className="flex justify-start" style={{ animation: 'uauEntrada 0.45s cubic-bezier(0.22,1,0.36,1)' }}>
+                {/* Avatar TC */}
+                <div className="w-7 h-7 rounded-xl overflow-hidden shrink-0 mr-2 mt-0.5" style={{ background: 'oklch(0.48 0.16 162)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', fontSize: '10px', fontWeight: 800, color: 'white', fontFamily: 'Poppins,sans-serif' }}>TC</span>
+                </div>
+
+                <div className="flex-1 max-w-[82%] space-y-2">
+                  {/* Linha "Registrado!" */}
+                  <div
+                    className="rounded-2xl rounded-bl-md px-4 py-3"
+                    style={{ backgroundColor: 'oklch(0.22 0.04 240)', boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' }}
+                  >
+                    <p className="text-sm font-semibold text-foreground">Registrado! ✅</p>
+                  </div>
+
+                  {/* Card visual do item */}
+                  <div
+                    className="rounded-2xl px-4 py-3.5"
+                    style={{ background: corBg, border: `1.5px solid ${corBorda}` }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-xl">{u.emoji}</span>
+                        <p className="text-[13px] font-semibold text-foreground leading-tight">{u.label}</p>
+                      </div>
+                      <p className="text-[15px] font-black" style={{ color: corValor, fontFamily: 'Poppins,sans-serif' }}>
+                        R$ {u.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Insight */}
+                  <div
+                    className="rounded-2xl rounded-bl-md px-4 py-3"
+                    style={{ backgroundColor: 'oklch(0.22 0.04 240)', boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' }}
+                  >
+                    <p className="text-sm whitespace-pre-wrap leading-relaxed text-foreground">{u.insight}</p>
+                    <p className="text-sm mt-2 font-medium" style={{ color: 'oklch(0.62 0.18 162)' }}>{u.followUp}</p>
+                    <p className="text-[10px] mt-2 opacity-40 text-right">
+                      {format(msg.timestamp, 'HH:mm', { locale: ptBR })}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )
+          }
+
+          // ── Mensagens normais ───────────────────────────────────
+          return (
           <div key={msg.id} className={`flex ${msg.tipo === 'usuario' ? 'justify-end' : 'justify-start'}`}>
             {msg.tipo === 'assistente' && (
               <div className="w-7 h-7 rounded-xl overflow-hidden shrink-0 mr-2 mt-0.5">
@@ -514,7 +669,8 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
               </p>
             </div>
           </div>
-        ))}
+          )
+        })}
         {processando && (
           <div className="flex justify-start">
             <div className="w-7 h-7 rounded-xl overflow-hidden shrink-0 mr-2 mt-0.5" style={{ background: 'oklch(0.48 0.16 162)' }}>
@@ -595,3 +751,4 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
     </div>
   )
 }
+
