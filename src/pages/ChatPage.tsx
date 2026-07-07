@@ -11,10 +11,36 @@ interface Mensagem {
   timestamp: Date
 }
 
+function gerarMsgInicial(): string {
+  const objetivo = localStorage.getItem('onboarding_objetivo') || ''
+  const renda = parseFloat(localStorage.getItem('onboarding_renda') || '0')
+  const nome = localStorage.getItem('user_name') || ''
+  const primeiro = nome.split(' ')[0]
+
+  const saudacao = primeiro ? `Oi, ${primeiro}! 👋` : 'Olá! 👋'
+
+  const linhaObjetivo: Record<string, string> = {
+    organizar: 'Vamos organizar seus gastos juntos e descobrir para onde seu dinheiro está indo.',
+    dividas: 'Vamos traçar um plano para você sair das dívidas e respirar aliviado.',
+    economizar: 'Vamos te ajudar a juntar dinheiro todo mês com controle real dos seus gastos.',
+    investir: 'Vamos organizar suas finanças para você começar a investir em breve.',
+  }
+  const descObjetivo = linhaObjetivo[objetivo] || 'Estou aqui para te ajudar a controlar suas finanças.'
+
+  let sugestao = '\nComece registrando algo agora:'
+  if (renda > 0) {
+    const metaSugerida = Math.round(renda * 0.3 / 100) * 100
+    sugestao += `\n\n💡 Com renda de ~R$ ${renda.toLocaleString('pt-BR')}, uma boa meta é guardar R$ ${metaSugerida.toLocaleString('pt-BR')} por mês.`
+  }
+  sugestao += '\n\n"Almoço 25 reais"\n"Recebi 3000 de freela"\n"Devo 500 no Nubank"'
+
+  return `${saudacao}\n\n${descObjetivo}${sugestao}`
+}
+
 const MSG_INICIAL: Mensagem = {
   id: '0',
   tipo: 'assistente',
-  conteudo: `Olá! Bem-vindo ao Tá Contado!\n\nMe conta teus gastos, receitas e dívidas:\n\n"Almoço 25 reais"\n"Recebi 3 mil de freela"\n"Devo 800 no Nubank"\n"Como foi abril?"\n\nUse os botões abaixo ou o microfone!`,
+  conteudo: gerarMsgInicial(),
   timestamp: new Date(),
 }
 

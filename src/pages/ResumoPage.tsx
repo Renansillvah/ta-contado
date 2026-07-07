@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Refere
 import { format, subMonths, startOfMonth } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Skeleton } from '@/components/ui/skeleton'
-import { TrendingUp, TrendingDown, CreditCard, AlertTriangle, CheckCircle2, AlertCircle, Wallet, ArrowDownCircle } from 'lucide-react'
+import { TrendingUp, TrendingDown, CreditCard, AlertTriangle, CheckCircle2, AlertCircle, Wallet, ArrowDownCircle, Target, Lightbulb, MessageSquare } from 'lucide-react'
 
 function formatBRL(v: number) {
   return `R$ ${v.toFixed(2).replace('.', ',')}`
@@ -64,6 +64,97 @@ function calcularSaude(saldo: number, ganhos: number, totalDividas: number, gast
     nivel: 'critica', label: 'Crítica', cor: '#ef4444', corBg: '#ef444418',
     pct: Math.max(score, 5), frase: 'Gastos superaram a renda. Reduza despesas urgente.'
   }
+}
+
+function PlanoInicial() {
+  const objetivo = localStorage.getItem('onboarding_objetivo') || ''
+  const renda = parseFloat(localStorage.getItem('onboarding_renda') || '0')
+
+  const PLANOS: Record<string, { titulo: string; descricao: string; dicas: string[] }> = {
+    organizar: {
+      titulo: 'Organizar suas finanças',
+      descricao: 'Para começar, registre seus gastos por 7 dias seguidos. Você vai se surpreender com o que descobre.',
+      dicas: ['Registre todo gasto, mesmo os pequenos', 'Use o Chat para lançar rapidinho', 'Veja o Resumo após a primeira semana'],
+    },
+    dividas: {
+      titulo: 'Plano para sair das dívidas',
+      descricao: 'Comece mapeando tudo que você deve. Depois corte os gastos supérfluos e direcione para as dívidas com os maiores juros.',
+      dicas: ['Cadastre suas dívidas na aba Dívidas', 'Identifique as de maior juros', 'Defina um valor fixo para quitar todo mês'],
+    },
+    economizar: {
+      titulo: 'Meta de poupança mensal',
+      descricao: 'Para economizar, você precisa saber para onde vai o dinheiro. Controle os gastos por 2 semanas e encontre onde cortar.',
+      dicas: ['Registre todos os gastos diariamente', 'Identifique os gastos que podem ser cortados', 'Transfira o que sobrar logo no começo do mês'],
+    },
+    investir: {
+      titulo: 'Preparar para investir',
+      descricao: 'Antes de investir, organize sua vida financeira. Quem não conhece seus gastos, não consegue sobrar dinheiro para investir.',
+      dicas: ['Registre receitas e gastos por 30 dias', 'Monte uma reserva de emergência primeiro', 'Com o saldo positivo, comece a investir'],
+    },
+  }
+
+  const plano = PLANOS[objetivo] || PLANOS['organizar']
+  const metaPoupanca = renda > 0 ? Math.round(renda * 0.3 / 100) * 100 : null
+
+  return (
+    <div className="space-y-3">
+      {/* Card boas-vindas ao resumo */}
+      <div
+        className="rounded-2xl p-5"
+        style={{ backgroundColor: 'oklch(0.48 0.16 162)', boxShadow: '0 4px 24px oklch(0.48 0.16 162 / 35%)' }}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <Target size={16} className="text-white/80" />
+          <p className="text-[11px] text-white/70 uppercase tracking-widest font-medium">Seu plano</p>
+        </div>
+        <p className="text-white font-black text-lg leading-tight mb-1">{plano.titulo}</p>
+        <p className="text-white/70 text-[13px] leading-relaxed">{plano.descricao}</p>
+        {metaPoupanca && (
+          <div className="mt-3 bg-white/15 rounded-xl px-3 py-2.5">
+            <p className="text-white/60 text-[11px] uppercase tracking-wider font-medium mb-0.5">Meta sugerida de poupança</p>
+            <p className="text-white font-bold text-xl">R$ {metaPoupanca.toLocaleString('pt-BR')}<span className="text-sm font-normal text-white/60">/mês</span></p>
+          </div>
+        )}
+      </div>
+
+      {/* Próximos passos */}
+      <div className="bg-card rounded-2xl p-4" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 18%)' }}>
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center">
+            <Lightbulb size={13} className="text-primary" />
+          </div>
+          <span className="text-xs font-semibold text-foreground">Próximos passos</span>
+        </div>
+        <div className="space-y-2.5">
+          {plano.dicas.map((dica, i) => (
+            <div key={i} className="flex items-start gap-3">
+              <div
+                className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 text-[10px] font-bold text-white"
+                style={{ backgroundColor: 'oklch(0.48 0.16 162)' }}
+              >
+                {i + 1}
+              </div>
+              <p className="text-xs text-foreground leading-relaxed">{dica}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* CTA para ir ao chat */}
+      <div
+        className="rounded-2xl p-4 flex items-center gap-3"
+        style={{ background: 'oklch(0.19 0.04 240)', border: '1px solid oklch(1 0 0 / 8%)' }}
+      >
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'oklch(0.48 0.16 162 / 20%)' }}>
+          <MessageSquare size={18} className="text-primary" />
+        </div>
+        <div className="flex-1">
+          <p className="text-foreground font-semibold text-[13px] leading-tight">Registre seu primeiro gasto</p>
+          <p className="text-muted-foreground text-[11px] mt-0.5">Vá no Chat e diga: "Almoço 25 reais"</p>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function ResumoPage() {
@@ -162,6 +253,8 @@ export default function ResumoPage() {
     return max.mesKey === MES_ATUAL ? null : max
   }, [dadosGastosMes, MES_ATUAL])
 
+  const semDados = gastos.length === 0 && receitas.length === 0
+
   return (
     <div className="overflow-y-auto h-full p-4 space-y-3">
       {loading ? (
@@ -170,6 +263,8 @@ export default function ResumoPage() {
           <Skeleton className="h-28 w-full rounded-2xl" />
           <Skeleton className="h-36 w-full rounded-2xl" />
         </div>
+      ) : semDados ? (
+        <PlanoInicial />
       ) : (
         <>
           {/* ── Card principal: saldo + saúde ── */}

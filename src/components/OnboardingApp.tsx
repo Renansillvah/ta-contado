@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { ChevronRight, CheckCircle2 } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { ChevronRight, CheckCircle2, DollarSign } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface Props {
@@ -23,39 +23,55 @@ const CONTROLES: { value: Controle; emoji: string; label: string }[] = [
   { value: 'receitas', emoji: '💰', label: 'Só as receitas' },
 ]
 
+const FAIXAS_RENDA = [
+  { label: 'Até R$ 1.500', value: 1500 },
+  { label: 'R$ 1.500 – R$ 3.000', value: 3000 },
+  { label: 'R$ 3.000 – R$ 6.000', value: 6000 },
+  { label: 'Acima de R$ 6.000', value: 8000 },
+]
+
 export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
   const [passo, setPasso] = useState(1)
   const [objetivo, setObjetivo] = useState<Objetivo | null>(null)
+  const [renda, setRenda] = useState<number | null>(null)
   const [controle, setControle] = useState<Controle | null>(null)
+  const inputRendaRef = useRef<HTMLInputElement>(null)
+  const [rendaCustom, setRendaCustom] = useState('')
+  const [usandoCustom, setUsandoCustom] = useState(false)
 
   const primeiro = nomeUsuario.split(' ')[0]
+  const totalPassos = 4
 
   const avancar = async () => {
-    if (passo < 3) {
+    if (passo < totalPassos) {
       setPasso(p => p + 1)
       return
     }
-    // Passo 3 — salvar preferências e concluir
+    // Passo final — salvar preferências e concluir
+    const rendaFinal = usandoCustom ? (parseFloat(rendaCustom.replace(',', '.')) || 0) : (renda ?? 0)
     try {
       await supabase.auth.updateUser({
         data: {
           onboarding_done: true,
           objetivo,
           controle,
+          renda_mensal: rendaFinal,
         },
       })
     } catch {
-      // silencia erro de metadata — não bloqueia o fluxo
+      // silencia erro de metadata
     }
+    localStorage.setItem('onboarding_renda', String(rendaFinal))
+    localStorage.setItem('onboarding_objetivo', objetivo ?? '')
+    localStorage.setItem('onboarding_controle', controle ?? '')
     onConcluir()
   }
 
   const podeAvancar =
     (passo === 1 && objetivo !== null) ||
-    (passo === 2 && controle !== null) ||
-    passo === 3
-
-  const totalPassos = 3
+    (passo === 2 && (renda !== null || (usandoCustom && rendaCustom.trim() !== ''))) ||
+    (passo === 3 && controle !== null) ||
+    passo === 4
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col max-w-lg mx-auto bg-background">
@@ -114,8 +130,70 @@ export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
           </div>
         )}
 
-        {/* PASSO 2 — O que controlar */}
+        {/* PASSO 2 — Renda mensal */}
         {passo === 2 && (
+          <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+            <div
+              className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
+              style={{ background: 'oklch(0.48 0.16 162 / 20%)' }}
+            >
+              <DollarSign size={22} className="text-primary" />
+            </div>
+            <h2 className="text-2xl font-black text-foreground mb-1">Sua renda mensal</h2>
+            <p className="text-muted-foreground text-[15px] mb-6 leading-relaxed">
+              Isso nos ajuda a criar um plano financeiro personalizado pra você.
+            </p>
+            <div className="space-y-2.5">
+              {FAIXAS_RENDA.map(f => (
+                <button
+                  key={f.value}
+                  onClick={() => { setRenda(f.value); setUsandoCustom(false) }}
+                  className="w-full flex items-center gap-4 rounded-2xl p-4 text-left transition-all active:scale-[0.98]"
+                  style={{
+                    background: renda === f.value && !usandoCustom ? 'oklch(0.48 0.16 162 / 15%)' : 'oklch(0.19 0.04 240)',
+                    border: renda === f.value && !usandoCustom
+                      ? '2px solid oklch(0.55 0.18 162 / 60%)'
+                      : '2px solid oklch(1 0 0 / 6%)',
+                  }}
+                >
+                  <p className="flex-1 font-semibold text-[14px] text-foreground">{f.label}</p>
+                  {renda === f.value && !usandoCustom && (
+                    <CheckCircle2 size={18} className="text-primary shrink-0" />
+                  )}
+                </button>
+              ))}
+              {/* Campo personalizado */}
+              <button
+                onClick={() => { setUsandoCustom(true); setRenda(null); setTimeout(() => inputRendaRef.current?.focus(), 50) }}
+                className="w-full flex items-center gap-4 rounded-2xl p-4 text-left transition-all active:scale-[0.98]"
+                style={{
+                  background: usandoCustom ? 'oklch(0.48 0.16 162 / 15%)' : 'oklch(0.19 0.04 240)',
+                  border: usandoCustom
+                    ? '2px solid oklch(0.55 0.18 162 / 60%)'
+                    : '2px solid oklch(1 0 0 / 6%)',
+                }}
+              >
+                <p className="flex-1 font-semibold text-[14px] text-foreground">Outro valor</p>
+                {usandoCustom && <CheckCircle2 size={18} className="text-primary shrink-0" />}
+              </button>
+              {usandoCustom && (
+                <div className="mt-1">
+                  <input
+                    ref={inputRendaRef}
+                    type="number"
+                    placeholder="Ex: 2500"
+                    value={rendaCustom}
+                    onChange={e => setRendaCustom(e.target.value)}
+                    className="w-full bg-secondary text-foreground placeholder:text-muted-foreground rounded-2xl px-4 py-3.5 text-sm outline-none border border-border focus:border-primary transition-colors"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* PASSO 3 — O que controlar */}
+        {passo === 3 && (
           <div className="animate-in fade-in slide-in-from-right-4 duration-300">
             <h2 className="text-2xl font-black text-foreground mb-1">Como vai usar?</h2>
             <p className="text-muted-foreground text-[15px] mb-6 leading-relaxed">
@@ -145,8 +223,8 @@ export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
           </div>
         )}
 
-        {/* PASSO 3 — Pronto */}
-        {passo === 3 && (
+        {/* PASSO 4 — Pronto */}
+        {passo === 4 && (
           <div className="animate-in fade-in zoom-in-95 duration-400 flex flex-col items-center text-center py-8">
             <div
               className="w-20 h-20 rounded-3xl flex items-center justify-center mb-6 shadow-xl"
@@ -161,7 +239,7 @@ export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
               Tudo pronto, {primeiro}!
             </h2>
             <p className="text-muted-foreground text-[15px] leading-relaxed max-w-xs">
-              Seu Tá Contado está configurado. Vamos começar registrando seu primeiro lançamento?
+              Seu plano financeiro está configurado. Vamos começar registrando seu primeiro lançamento?
             </p>
 
             {/* Dica de uso */}
