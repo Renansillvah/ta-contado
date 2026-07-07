@@ -116,16 +116,6 @@ export default function AuthPage({ onAutenticado }: Props) {
       }
       // Se criou usuário mas não tem sessão → confirmação de e-mail está habilitada
       if (data.user && !data.session) {
-        // Tenta logar direto (alguns projetos retornam user sem session mas permitem login)
-        const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-          email,
-          password: senha,
-        })
-        if (!loginError && loginData.session) {
-          onAutenticado()
-          return
-        }
-        // Confirmação de e-mail obrigatória
         irPara('check-email')
         return
       }
@@ -221,23 +211,79 @@ export default function AuthPage({ onAutenticado }: Props) {
     )
   }
 
-  // ── E-mail enviado ─────────────────────────────────────────────────────────
+  // ── E-mail enviado (confirmação de cadastro ou recuperação de senha) ──────
   if (tela === 'check-email') {
+    const isRecovery = !nome // se não tem nome preenchido, veio do fluxo de recuperação
     return (
-      <div className="flex flex-col h-screen max-w-lg mx-auto bg-background items-center justify-center px-8">
-        <div className="w-16 h-16 rounded-2xl bg-primary/15 flex items-center justify-center mb-5">
-          <CheckCircle2 size={32} className="text-primary" />
-        </div>
-        <h2 className="text-xl font-bold text-foreground text-center mb-2">Verifique seu e-mail</h2>
-        <p className="text-muted-foreground text-center text-[14px] leading-relaxed max-w-xs">
-          Enviamos um link para <strong className="text-foreground">{email}</strong>. Clique nele para redefinir sua senha.
-        </p>
-        <button
-          onClick={() => irPara('login')}
-          className="mt-8 text-primary text-sm font-semibold"
+      <div className="flex flex-col h-screen max-w-lg mx-auto bg-background overflow-hidden">
+        <div
+          className="px-5 pt-5 pb-6 shrink-0"
+          style={{ background: 'linear-gradient(180deg, #0a1628 0%, oklch(0.14 0.03 240) 100%)' }}
         >
-          Voltar para o login
-        </button>
+          <button
+            onClick={() => irPara(isRecovery ? 'login' : 'welcome')}
+            className="flex items-center gap-1.5 text-white/50 hover:text-white/80 transition-colors"
+          >
+            <ArrowLeft size={17} />
+            <span className="text-sm">Voltar</span>
+          </button>
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center px-8 pb-16">
+          {/* Ícone */}
+          <div
+            className="w-20 h-20 rounded-3xl flex items-center justify-center mb-6"
+            style={{ background: 'oklch(0.48 0.16 162 / 15%)', border: '1px solid oklch(0.55 0.18 162 / 30%)' }}
+          >
+            <CheckCircle2 size={36} className="text-primary" />
+          </div>
+
+          <h2 className="text-2xl font-black text-foreground text-center mb-3">
+            {isRecovery ? 'Verifique seu e-mail' : 'Conta criada!'}
+          </h2>
+
+          <p className="text-muted-foreground text-center text-[15px] leading-relaxed max-w-xs mb-2">
+            {isRecovery
+              ? 'Enviamos um link para redefinir sua senha para:'
+              : 'Enviamos um link de confirmação para:'
+            }
+          </p>
+
+          <div
+            className="px-4 py-2.5 rounded-xl mb-6"
+            style={{ background: 'oklch(0.19 0.04 240)', border: '1px solid oklch(1 0 0 / 10%)' }}
+          >
+            <p className="text-foreground font-semibold text-[14px]">{email}</p>
+          </div>
+
+          <div
+            className="rounded-2xl p-4 w-full max-w-xs mb-8"
+            style={{ background: 'oklch(0.17 0.03 240)', border: '1px solid oklch(1 0 0 / 8%)' }}
+          >
+            <p className="text-muted-foreground text-[13px] leading-relaxed text-center">
+              {isRecovery
+                ? 'Clique no link do e-mail para criar uma nova senha. Verifique também sua caixa de spam.'
+                : 'Abra o e-mail e clique em "Confirmar conta" para ativar seu acesso. Verifique também a pasta de spam.'
+              }
+            </p>
+          </div>
+
+          <button
+            onClick={() => irPara('login')}
+            className="w-full max-w-xs py-4 rounded-2xl font-bold text-[15px] text-white active:scale-[0.98] transition-transform"
+            style={{ backgroundColor: 'oklch(0.55 0.18 162)' }}
+          >
+            Já confirmei — Entrar
+          </button>
+
+          <button
+            onClick={() => irPara(isRecovery ? 'forgot' : 'signup')}
+            className="mt-4 text-sm text-muted-foreground"
+          >
+            Não recebi o e-mail —{' '}
+            <span className="text-primary font-semibold">tentar novamente</span>
+          </button>
+        </div>
       </div>
     )
   }
