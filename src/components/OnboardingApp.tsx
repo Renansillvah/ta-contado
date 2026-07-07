@@ -1,6 +1,7 @@
-import { useState, useRef } from 'react'
-import { ChevronRight, CheckCircle2, DollarSign } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { ChevronRight, CheckCircle2, DollarSign, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { gerarBoasVindasIA } from '@/lib/openai'
 
 interface Props {
   nomeUsuario: string
@@ -30,6 +31,13 @@ const FAIXAS_RENDA = [
   { label: 'Acima de R$ 6.000', value: 8000 },
 ]
 
+const FRASES_LOADING = [
+  'Analisando seu perfil financeiro...',
+  'Preparando seu plano personalizado...',
+  'Calculando suas metas...',
+  'Quase pronto...',
+]
+
 export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
   const [passo, setPasso] = useState(1)
   const [objetivo, setObjetivo] = useState<Objetivo | null>(null)
@@ -38,9 +46,48 @@ export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
   const inputRendaRef = useRef<HTMLInputElement>(null)
   const [rendaCustom, setRendaCustom] = useState('')
   const [usandoCustom, setUsandoCustom] = useState(false)
+  const [gerando, setGerando] = useState(false)
+  const [fraseIdx, setFraseIdx] = useState(0)
+  const [iaGerada, setIaGerada] = useState(false)
 
   const primeiro = nomeUsuario.split(' ')[0]
   const totalPassos = 4
+
+  // Rotaciona frases de loading
+  useEffect(() => {
+    if (!gerando) return
+    const id = setInterval(() => {
+      setFraseIdx(i => (i + 1) % FRASES_LOADING.length)
+    }, 1200)
+    return () => clearInterval(id)
+  }, [gerando])
+
+  // Quando chega ao passo 4, dispara a geração de IA em background
+  useEffect(() => {
+    if (passo !== 4 || iaGerada) return
+
+    const rendaFinal = usandoCustom ? (parseFloat(rendaCustom.replace(',', '.')) || 0) : (renda ?? 0)
+
+    setGerando(true)
+    gerarBoasVindasIA({
+      nome: primeiro,
+      objetivo: objetivo ?? '',
+      renda: rendaFinal,
+      controle: controle ?? '',
+    })
+      .then(msg => {
+        if (msg) {
+          localStorage.setItem('onboarding_msg_ia', msg)
+        }
+      })
+      .catch(() => {
+        // silencia — fallback para mensagem estática no ChatPage
+      })
+      .finally(() => {
+        setGerando(false)
+        setIaGerada(true)
+      })
+  }, [passo]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const avancar = async () => {
     if (passo < totalPassos) {
@@ -223,40 +270,85 @@ export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
           </div>
         )}
 
-        {/* PASSO 4 — Pronto */}
+        {/* PASSO 4 — Pronto + IA gerando */}
         {passo === 4 && (
           <div className="animate-in fade-in zoom-in-95 duration-400 flex flex-col items-center text-center py-8">
             <div
-              className="w-20 h-20 rounded-3xl flex items-center justify-center mb-6 shadow-xl"
+              className="w-20 h-20 rounded-3xl flex items-center justify-center mb-6 shadow-xl relative"
               style={{
                 background: 'oklch(0.48 0.16 162)',
                 boxShadow: '0 8px 32px oklch(0.48 0.16 162 / 40%)',
               }}
             >
               <CheckCircle2 size={36} className="text-white" />
+              {gerando && (
+                <div
+                  className="absolute -top-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center animate-pulse"
+                  style={{ background: 'oklch(0.65 0.20 60)' }}
+                >
+                  <Sparkles size={12} className="text-white" />
+                </div>
+              )}
             </div>
+
             <h2 className="text-2xl font-black text-foreground mb-2">
               Tudo pronto, {primeiro}!
             </h2>
-            <p className="text-muted-foreground text-[15px] leading-relaxed max-w-xs">
-              Seu plano financeiro está configurado. Vamos começar registrando seu primeiro lançamento?
-            </p>
+
+            {gerando ? (
+              <div className="flex flex-col items-center gap-3 mt-2">
+                <p className="text-muted-foreground text-[15px] leading-relaxed max-w-xs animate-in fade-in duration-300 key={fraseIdx}">
+                  {FRASES_LOADING[fraseIdx]}
+                </p>
+                <div className="flex gap-1.5 mt-1">
+                  {[0, 1, 2].map(i => (
+                    <div
+                      key={i}
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{
+                        backgroundColor: 'oklch(0.55 0.18 162)',
+                        animation: `bounce 1s ease-in-out ${i * 0.15}s infinite`,
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-muted-foreground text-[15px] leading-relaxed max-w-xs">
+                Seu plano financeiro personalizado está pronto. Vamos começar?
+              </p>
+            )}
+
+            {/* Card de destaque — aparece após IA gerar */}
+            {!gerando && (
+              <div
+                className="mt-8 w-full rounded-2xl p-4 text-left animate-in fade-in slide-in-from-bottom-2 duration-500"
+                style={{ background: 'oklch(0.48 0.16 162 / 12%)', border: '1px solid oklch(0.55 0.18 162 / 25%)' }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles size={13} className="text-primary" />
+                  <p className="text-xs font-bold text-primary uppercase tracking-wider">Seu assessor financeiro está pronto</p>
+                </div>
+                <p className="text-[13px] text-foreground leading-relaxed">
+                  Abra o <strong className="text-primary">Chat</strong> para ver sua análise personalizada e começar a registrar.
+                </p>
+              </div>
+            )}
 
             {/* Dica de uso */}
-            <div
-              className="mt-8 w-full rounded-2xl p-4 text-left"
-              style={{ background: 'oklch(0.19 0.04 240)', border: '1px solid oklch(1 0 0 / 8%)' }}
-            >
-              <p className="text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wider">Dica rápida</p>
-              <p className="text-[13px] text-foreground leading-relaxed">
-                Use o <strong className="text-primary">Chat</strong> para registrar qualquer coisa com texto livre:
-              </p>
-              <div className="mt-2 space-y-1">
-                {['"Almoço 25 reais"', '"Recebi 3000 de freela"', '"Devo 500 no Nubank"'].map(ex => (
-                  <p key={ex} className="text-xs text-muted-foreground font-mono">{ex}</p>
-                ))}
+            {!gerando && (
+              <div
+                className="mt-3 w-full rounded-2xl p-4 text-left animate-in fade-in duration-700"
+                style={{ background: 'oklch(0.19 0.04 240)', border: '1px solid oklch(1 0 0 / 8%)' }}
+              >
+                <p className="text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wider">Exemplos de registro</p>
+                <div className="space-y-1">
+                  {['"Almoço 25 reais"', '"Recebi 3000 de freela"', '"Devo 500 no Nubank"'].map(ex => (
+                    <p key={ex} className="text-xs text-muted-foreground font-mono">{ex}</p>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>
@@ -273,6 +365,13 @@ export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
           {passo < totalPassos && <ChevronRight size={18} />}
         </button>
       </div>
+
+      <style>{`
+        @keyframes bounce {
+          0%, 100% { transform: translateY(0); opacity: 0.4; }
+          50% { transform: translateY(-5px); opacity: 1; }
+        }
+      `}</style>
     </div>
   )
 }

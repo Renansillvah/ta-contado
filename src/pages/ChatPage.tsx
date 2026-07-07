@@ -12,6 +12,14 @@ interface Mensagem {
 }
 
 function gerarMsgInicial(): string {
+  // Verificar se há mensagem gerada pela IA no onboarding
+  const msgIA = localStorage.getItem('onboarding_msg_ia')
+  if (msgIA) {
+    localStorage.removeItem('onboarding_msg_ia') // usa uma vez só
+    return msgIA
+  }
+
+  // Fallback estático baseado no perfil
   const objetivo = localStorage.getItem('onboarding_objetivo') || ''
   const renda = parseFloat(localStorage.getItem('onboarding_renda') || '0')
   const nome = localStorage.getItem('user_name') || ''
