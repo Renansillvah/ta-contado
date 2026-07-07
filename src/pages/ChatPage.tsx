@@ -221,15 +221,20 @@ export default function ChatPage() {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
   }, [])
 
-  const { adicionarGasto, adicionarReceita, adicionarDivida, totalGastos, totalReceitas, totalDividas } = useApp()
+  const { adicionarGasto, adicionarReceita, adicionarDivida, totalGastos, totalReceitas, totalDividas, user } = useApp()
 
-  // Cumprimento diário — dispara uma vez por dia após dados carregarem
+  // Cumprimento diário — dispara uma vez por dia, aguarda o user carregar
   useEffect(() => {
+    if (!user) return // aguarda autenticação
+
     const hoje = new Date().toISOString().split('T')[0]
     const ultimoCumprimento = localStorage.getItem('ultimo_cumprimento')
     if (ultimoCumprimento === hoje) return
 
-    const nome = localStorage.getItem('user_name') || ''
+    const nome = (user.user_metadata?.full_name as string | undefined)
+      || localStorage.getItem('user_name')
+      || ''
+
     gerarCumprimentoDiario(nome, totalGastos, totalReceitas, totalDividas).then(texto => {
       if (!texto) return
       localStorage.setItem('ultimo_cumprimento', hoje)
@@ -241,7 +246,7 @@ export default function ChatPage() {
       }])
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // roda só na montagem — valores do dia 0 são suficientes para o cumprimento
+  }, [user]) // dispara quando o user fica disponível
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
