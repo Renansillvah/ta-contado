@@ -280,7 +280,8 @@ const CHIPS_INICIAIS = [
   { label: 'Ver meu resumo', input: 'Resumo do mês' },
 ]
 
-const KEY_UAU = 'chat_momento_uau_exibido'
+const KEY_UAU       = 'chat_momento_uau_exibido'
+const KEY_ANCORAGEM = 'chat_ancoragem_retorno_exibida'
 
 function gerarUau(
   acao: 'gasto' | 'receita' | 'divida',
@@ -364,6 +365,21 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
 
   const { adicionarGasto, adicionarReceita, adicionarDivida, totalGastos, totalReceitas, totalDividas, user } = useApp()
 
+  const dispararAncoragem = (nome: string) => {
+    if (localStorage.getItem(KEY_ANCORAGEM)) return
+    localStorage.setItem(KEY_ANCORAGEM, '1')
+    const primeiro = nome.split(' ')[0] || 'você'
+    const texto = `TC 🤝\n\n${primeiro}, você deu o primeiro passo hoje! 🎯\n\nA partir de agora vou ajudar você a entender melhor sua vida financeira.\n\nQuando voltar amanhã, vou mostrar um resumo do que foi registrado hoje e ajudar você a tomar decisões melhores.\n\nAté amanhã! 👋`
+    setTimeout(() => {
+      setMensagens(prev => [...prev, {
+        id: `ancoragem-${Date.now()}`,
+        tipo: 'assistente',
+        conteudo: texto,
+        timestamp: new Date(),
+      }])
+    }, 4000)
+  }
+
   // Preenche input vindo do onboarding
   useEffect(() => {
     if (!inputInicial) return
@@ -425,6 +441,7 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
         const uau = gerarUau('gasto', intencao.descricao, intencao.valor, intencao.categoria)
         if (uau) {
           setMensagens(prev => [...prev, { id: (Date.now() + 1).toString(), tipo: 'uau', conteudo: '', timestamp: new Date(), uau }])
+          dispararAncoragem(localStorage.getItem('user_name') || '')
           setProcessando(false)
           return
         }
@@ -434,6 +451,7 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
         const uau = gerarUau('receita', intencao.descricao, intencao.valor, intencao.categoria)
         if (uau) {
           setMensagens(prev => [...prev, { id: (Date.now() + 1).toString(), tipo: 'uau', conteudo: '', timestamp: new Date(), uau }])
+          dispararAncoragem(localStorage.getItem('user_name') || '')
           setProcessando(false)
           return
         }
@@ -443,6 +461,7 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
         const uau = gerarUau('divida', intencao.descricao, intencao.valor, 'outros')
         if (uau) {
           setMensagens(prev => [...prev, { id: (Date.now() + 1).toString(), tipo: 'uau', conteudo: '', timestamp: new Date(), uau }])
+          dispararAncoragem(localStorage.getItem('user_name') || '')
           setProcessando(false)
           return
         }
