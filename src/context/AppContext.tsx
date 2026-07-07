@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { supabase, type Gasto, type Divida, type Receita } from '@/lib/supabase'
 import { toast } from 'sonner'
+import type { User } from '@supabase/supabase-js'
 
 interface AppContextType {
   gastos: Gasto[]
@@ -8,6 +9,7 @@ interface AppContextType {
   receitas: Receita[]
   loading: boolean
   supabaseOk: boolean
+  user: User | null
   totalGastos: number
   totalReceitas: number
   totalDividas: number
@@ -21,11 +23,12 @@ interface AppContextType {
   removerReceita: (id: string) => Promise<void>
   marcarRecebido: (id: string) => Promise<void>
   recarregar: () => Promise<void>
+  logout: () => Promise<void>
 }
 
 const AppContext = createContext<AppContextType | null>(null)
 
-export function AppProvider({ children }: { children: ReactNode }) {
+export function AppProvider({ children, user }: { children: ReactNode; user: User | null }) {
   const [gastos, setGastos] = useState<Gasto[]>([])
   const [dividas, setDividas] = useState<Divida[]>([])
   const [receitas, setReceitas] = useState<Receita[]>([])
@@ -37,12 +40,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const totalDividas = dividas.reduce((s, d) => s + (Number(d.valor_total) - Number(d.valor_pago)), 0)
 
   const carregar = useCallback(async () => {
+    if (!user) { setLoading(false); return }
     setLoading(true)
     try {
       const [rGastos, rDividas, rReceitas] = await Promise.all([
-        supabase.from('gastos').select('*').order('data', { ascending: false }),
-        supabase.from('dividas').select('*').order('created_at', { ascending: false }),
-        supabase.from('receitas').select('*').order('data', { ascending: false }),
+        supabase.from('gastos').select('*').eq('user_id', user.id).order('data', { ascending: false }),
+        supabase.from('dividas').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+        supabase.from('receitas').select('*').eq('user_id', user.id).order('data', { ascending: false }),
       ])
       if (rGastos.error || rDividas.error || rReceitas.error) {
         setSupabaseOk(false)
@@ -57,42 +61,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [user])
 
   useEffect(() => { carregar() }, [carregar])
 
-  // Realtime: atualiza automaticamente quando Edge Function salva dados via WhatsApp
   useEffect(() => {
+    if (!user) return
     const channel = supabase
-      .channel('whatsapp-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gastos' }, (payload) => {
+      .channel('realtime-user-' + user.id)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gastos', filter: `user_id=eq.${user.id}` }, (payload) => {
         setGastos(prev => {
           if (prev.find(g => g.id === payload.new.id)) return prev
-          toast('📱 Gasto registrado pelo WhatsApp!', { icon: '💸' })
+          toast('Gasto registrado pelo WhatsApp!', { icon: '💸' })
           return [payload.new as Gasto, ...prev]
         })
       })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'receitas' }, (payload) => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'receitas', filter: `user_id=eq.${user.id}` }, (payload) => {
         setReceitas(prev => {
           if (prev.find(r => r.id === payload.new.id)) return prev
-          toast('📱 Receita registrada pelo WhatsApp!', { icon: '💰' })
+          toast('Receita registrada pelo WhatsApp!', { icon: '💰' })
           return [payload.new as Receita, ...prev]
         })
       })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dividas' }, (payload) => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dividas', filter: `user_id=eq.${user.id}` }, (payload) => {
         setDividas(prev => {
           if (prev.find(d => d.id === payload.new.id)) return prev
-          toast('📱 Dívida registrada pelo WhatsApp!', { icon: '📋' })
+          toast('Dívida registrada pelo WhatsApp!', { icon: '📋' })
           return [payload.new as Divida, ...prev]
         })
       })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [])
+  }, [user])
 
   const adicionarGasto = async (g: Omit<Gasto, 'id' | 'created_at'>) => {
-    const { data, error } = await supabase.from('gastos').insert([g]).select().single()
+    if (!user) return
+    const { data, error } = await supabase.from('gastos').insert([{ ...g, user_id: user.id }]).select().single()
     if (error) { toast.error('Erro ao salvar gasto'); return }
     setGastos(prev => [data, ...prev])
     toast.success('Gasto registrado!')
@@ -106,7 +111,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   const adicionarDivida = async (d: Omit<Divida, 'id' | 'created_at'>) => {
-    const { data, error } = await supabase.from('dividas').insert([d]).select().single()
+    if (!user) return
+    const { data, error } = await supabase.from('dividas').insert([{ ...d, user_id: user.id }]).select().single()
     if (error) { toast.error('Erro ao salvar dívida'); return }
     setDividas(prev => [data, ...prev])
     toast.success('Dívida registrada!')
@@ -137,7 +143,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   const adicionarReceita = async (r: Omit<Receita, 'id' | 'created_at'>) => {
-    const { data, error } = await supabase.from('receitas').insert([r]).select().single()
+    if (!user) return
+    const { data, error } = await supabase.from('receitas').insert([{ ...r, user_id: user.id }]).select().single()
     if (error) { toast.error('Erro ao salvar receita'); return }
     setReceitas(prev => [data, ...prev])
     toast.success('Receita registrada!')
@@ -157,14 +164,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast.success('Receita marcada como recebida!')
   }
 
+  const logout = async () => {
+    await supabase.auth.signOut()
+  }
+
   return (
     <AppContext.Provider value={{
-      gastos, dividas, receitas, loading, supabaseOk,
+      gastos, dividas, receitas, loading, supabaseOk, user,
       totalGastos, totalReceitas, totalDividas,
       adicionarGasto, removerGasto,
       adicionarDivida, removerDivida, pagarDivida, atualizarDivida,
       adicionarReceita, removerReceita, marcarRecebido,
       recarregar: carregar,
+      logout,
     }}>
       {children}
     </AppContext.Provider>

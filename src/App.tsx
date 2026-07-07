@@ -1,16 +1,18 @@
-import { useState } from 'react'
-import { MessageSquare, Receipt, CreditCard, TrendingUp, BarChart2, X, Target, Share2, Download, Trash2, ChevronRight, CheckCircle, MessageCircle, Pencil, Check } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { MessageSquare, Receipt, CreditCard, TrendingUp, BarChart2, X, Target, Share2, Download, Trash2, ChevronRight, CheckCircle, MessageCircle, Pencil, Check, LogOut } from 'lucide-react'
 import { AppProvider, useApp } from '@/context/AppContext'
 import ChatPage from '@/pages/ChatPage'
 import GastosPage from '@/pages/GastosPage'
 import DividasPage from '@/pages/DividasPage'
 import ReceitasPage from '@/pages/ReceitasPage'
 import ResumoPage from '@/pages/ResumoPage'
-import Onboarding from '@/components/Onboarding'
+import AuthPage from '@/pages/AuthPage'
+import OnboardingApp from '@/components/OnboardingApp'
 import { WhatsAppConnect } from '@/components/WhatsAppConnect'
 import { Toaster } from 'sonner'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
+import type { User } from '@supabase/supabase-js'
 
 type Tab = 'chat' | 'gastos' | 'dividas' | 'receitas' | 'resumo'
 
@@ -89,7 +91,7 @@ function SideMenu({
   nomeUsuario: string
   onRenomear: (nome: string) => void
 }) {
-  const { gastos, receitas, dividas } = useApp()
+  const { gastos, receitas, dividas, logout } = useApp()
   const [showWhatsApp, setShowWhatsApp] = useState(false)
   const [showMeta, setShowMeta] = useState(false)
   const [confirmLimpar, setConfirmLimpar] = useState(false)
@@ -100,10 +102,11 @@ function SideMenu({
   const waPhone = localStorage.getItem('wa_phone') ?? ''
   const inicial = nomeUsuario ? nomeUsuario.charAt(0).toUpperCase() : 'U'
 
-  const salvarNome = () => {
+  const salvarNome = async () => {
     const nome = novoNome.trim()
     if (!nome) return
     localStorage.setItem('user_name', nome)
+    await supabase.auth.updateUser({ data: { full_name: nome } })
     onRenomear(nome)
     setEditandoNome(false)
     toast.success('Nome atualizado!')
@@ -111,11 +114,7 @@ function SideMenu({
 
   const handleCompartilhar = () => {
     if (navigator.share) {
-      navigator.share({
-        title: 'Tá Contado',
-        text: 'Controle suas finanças de forma simples! Conheça o Tá Contado',
-        url: window.location.href,
-      })
+      navigator.share({ title: 'Tá Contado', text: 'Controle suas finanças de forma simples! Conheça o Tá Contado', url: window.location.href })
     } else {
       navigator.clipboard.writeText(window.location.href)
       toast.success('Link copiado!')
@@ -124,7 +123,6 @@ function SideMenu({
   }
 
   const handleExportar = async () => {
-    // Usa os dados do Supabase (já carregados no contexto)
     const linhas = [
       '=== RESUMO TÁ CONTADO ===',
       `Exportado em: ${new Date().toLocaleDateString('pt-BR')}`,
@@ -151,11 +149,14 @@ function SideMenu({
 
   const handleLimpar = async () => {
     try {
-      await Promise.all([
-        supabase.from('gastos').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('receitas').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        supabase.from('dividas').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-      ])
+      const { user } = await supabase.auth.getUser().then(r => r.data)
+      if (user) {
+        await Promise.all([
+          supabase.from('gastos').delete().eq('user_id', user.id),
+          supabase.from('receitas').delete().eq('user_id', user.id),
+          supabase.from('dividas').delete().eq('user_id', user.id),
+        ])
+      }
       toast.success('Todos os dados foram apagados.')
       window.location.reload()
     } catch {
@@ -165,16 +166,19 @@ function SideMenu({
     onClose()
   }
 
+  const handleLogout = async () => {
+    await logout()
+    onClose()
+    toast.success('Saiu com sucesso.')
+  }
+
   return (
     <>
-      {/* Overlay */}
       <div
         className={`fixed inset-0 z-40 transition-opacity duration-300 ${open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
         style={{ background: 'rgba(0,0,0,0.60)' }}
         onClick={onClose}
       />
-
-      {/* Drawer */}
       <div
         className={`fixed top-0 left-0 h-full z-50 flex flex-col transition-transform duration-300 ease-out overflow-y-auto`}
         style={{
@@ -185,7 +189,7 @@ function SideMenu({
           transform: open ? 'translateX(0)' : 'translateX(-100%)',
         }}
       >
-        {/* Header do menu — única área azul, mantém identidade da marca */}
+        {/* Header */}
         <div
           className="px-4 pt-5 pb-4 flex items-center justify-between shrink-0"
           style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0d2452 60%, #0f2d6b 100%)' }}
@@ -207,7 +211,7 @@ function SideMenu({
           </button>
         </div>
 
-        {/* Card perfil — compacto e editável */}
+        {/* Card perfil */}
         <div className="px-3 pt-3 pb-0">
           <div
             className="flex items-center gap-3 px-3.5 py-3 rounded-2xl"
@@ -246,10 +250,9 @@ function SideMenu({
           </div>
         </div>
 
-        {/* Seção FERRAMENTAS */}
+        {/* Ferramentas */}
         <div className="px-3 mt-4">
           <p className="text-[10px] font-bold tracking-widest text-muted-foreground/50 mb-1.5 px-1">FERRAMENTAS</p>
-
           <MenuItem
             icon={<Target size={17} />}
             label="Meta mensal de gastos"
@@ -260,9 +263,7 @@ function SideMenu({
             onClick={() => setShowMeta(v => !v)}
             active={showMeta}
           />
-
           {showMeta && <MetaMensal onClose={() => setShowMeta(false)} />}
-
           <MenuItem
             icon={<Download size={17} />}
             label="Exportar dados"
@@ -271,7 +272,7 @@ function SideMenu({
           />
         </div>
 
-        {/* Seção WHATSAPP */}
+        {/* WhatsApp */}
         <div className="px-3 mt-4">
           <p className="text-[10px] font-bold tracking-widest text-muted-foreground/50 mb-1.5 px-1">WHATSAPP</p>
           <div
@@ -286,18 +287,11 @@ function SideMenu({
                 className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                 style={{ background: waConnected ? 'oklch(0.55 0.18 162 / 20%)' : 'oklch(0.25 0.04 240)' }}
               >
-                {waConnected
-                  ? <CheckCircle size={20} className="text-primary" />
-                  : <MessageCircle size={20} className="text-muted-foreground" />
-                }
+                {waConnected ? <CheckCircle size={20} className="text-primary" /> : <MessageCircle size={20} className="text-muted-foreground" />}
               </div>
               <div className="flex-1">
-                <p className="text-foreground font-bold text-[13px]">
-                  {waConnected ? 'WhatsApp conectado' : 'Usar pelo WhatsApp'}
-                </p>
-                <p className="text-muted-foreground text-[11px]">
-                  {waConnected ? `+55 ${waPhone}` : 'Registre tudo sem abrir o app'}
-                </p>
+                <p className="text-foreground font-bold text-[13px]">{waConnected ? 'WhatsApp conectado' : 'Usar pelo WhatsApp'}</p>
+                <p className="text-muted-foreground text-[11px]">{waConnected ? `+55 ${waPhone}` : 'Registre tudo sem abrir o app'}</p>
               </div>
             </div>
             {!waConnected && (
@@ -317,11 +311,9 @@ function SideMenu({
           </div>
         </div>
 
-        {showWhatsApp && (
-          <WhatsAppConnect nomeUsuario={nomeUsuario} onClose={() => setShowWhatsApp(false)} />
-        )}
+        {showWhatsApp && <WhatsAppConnect nomeUsuario={nomeUsuario} onClose={() => setShowWhatsApp(false)} />}
 
-        {/* Seção COMPARTILHAR */}
+        {/* Compartilhar */}
         <div className="px-3 mt-4">
           <p className="text-[10px] font-bold tracking-widest text-muted-foreground/50 mb-1.5 px-1">COMPARTILHAR</p>
           <MenuItem
@@ -332,7 +324,7 @@ function SideMenu({
           />
         </div>
 
-        {/* Seção PERIGO */}
+        {/* Dados + logout */}
         <div className="px-3 mt-4 mb-6">
           <p className="text-[10px] font-bold tracking-widest text-muted-foreground/50 mb-1.5 px-1">DADOS</p>
 
@@ -344,18 +336,8 @@ function SideMenu({
               <p className="text-sm font-bold text-foreground mb-0.5">Apagar todos os dados?</p>
               <p className="text-xs text-muted-foreground mb-3">Gastos, receitas e dívidas serão removidos permanentemente. Esta ação não pode ser desfeita.</p>
               <div className="flex gap-2">
-                <button
-                  onClick={() => setConfirmLimpar(false)}
-                  className="flex-1 bg-secondary text-foreground rounded-xl py-2.5 text-xs font-medium"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleLimpar}
-                  className="flex-1 bg-destructive text-white rounded-xl py-2.5 text-xs font-semibold"
-                >
-                  Apagar tudo
-                </button>
+                <button onClick={() => setConfirmLimpar(false)} className="flex-1 bg-secondary text-foreground rounded-xl py-2.5 text-xs font-medium">Cancelar</button>
+                <button onClick={handleLimpar} className="flex-1 bg-destructive text-white rounded-xl py-2.5 text-xs font-semibold">Apagar tudo</button>
               </div>
             </div>
           ) : (
@@ -373,9 +355,23 @@ function SideMenu({
               <ChevronRight size={14} className="text-muted-foreground/40 shrink-0" />
             </button>
           )}
+
+          {/* Logout */}
+          <button
+            className="w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-colors hover:bg-white/4 mt-1"
+            onClick={handleLogout}
+          >
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'oklch(0.20 0.04 240)' }}>
+              <LogOut size={16} className="text-muted-foreground" />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-foreground font-semibold text-[13px] leading-tight">Sair da conta</p>
+              <p className="text-muted-foreground text-[11px] mt-0.5">Encerrar sessão</p>
+            </div>
+            <ChevronRight size={14} className="text-muted-foreground/40 shrink-0" />
+          </button>
         </div>
 
-        {/* Footer */}
         <div className="mt-auto pb-6 text-center">
           <p className="text-muted-foreground/30 text-[11px]">Tá Contado v1.0</p>
         </div>
@@ -385,17 +381,9 @@ function SideMenu({
 }
 
 function MenuItem({
-  icon,
-  label,
-  desc,
-  onClick,
-  active = false,
+  icon, label, desc, onClick, active = false,
 }: {
-  icon: React.ReactNode
-  label: string
-  desc: string
-  onClick: () => void
-  active?: boolean
+  icon: React.ReactNode; label: string; desc: string; onClick: () => void; active?: boolean
 }) {
   return (
     <button
@@ -404,7 +392,7 @@ function MenuItem({
       onClick={onClick}
     >
       <div
-        className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-foreground"
+        className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
         style={{ background: active ? 'oklch(0.48 0.16 162 / 20%)' : 'oklch(0.20 0.04 240)' }}
       >
         <span className={active ? 'text-primary' : 'text-muted-foreground'}>{icon}</span>
@@ -418,34 +406,20 @@ function MenuItem({
   )
 }
 
-// ── Header ───────────────────────────────────────────────────────────────────
-function Header({
-  nomeUsuario,
-  onMenuOpen,
-}: {
-  nomeUsuario: string
-  onMenuOpen: () => void
-}) {
+// ── Header ────────────────────────────────────────────────────────────────────
+function Header({ nomeUsuario, onMenuOpen }: { nomeUsuario: string; onMenuOpen: () => void }) {
   const { totalGastos, totalReceitas } = useApp()
-
   return (
     <div
       className="px-4 pt-3.5 pb-3"
-      style={{
-        background: 'linear-gradient(135deg, #0a1628 0%, #0d2452 50%, #0f2d6b 100%)',
-        borderRadius: '0 0 32px 32px',
-      }}
+      style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0d2452 50%, #0f2d6b 100%)', borderRadius: '0 0 32px 32px' }}
     >
       <div className="flex items-center justify-between">
-        {/* Botão sanduíche */}
         <div className="flex items-center gap-3">
           <button
             onClick={onMenuOpen}
             className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:opacity-80 active:scale-95"
-            style={{
-              background: 'rgba(255,255,255,0.08)',
-              border: '1px solid rgba(255,255,255,0.15)',
-            }}
+            style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}
             aria-label="Abrir menu"
           >
             <div className="flex flex-col gap-[4.5px]">
@@ -461,19 +435,15 @@ function Header({
             </p>
           </div>
         </div>
-
-        {/* Gastos e Receitas */}
-        <div className="text-right">
-          <div className="flex items-center gap-3">
-            <div>
-              <p className="text-[10px] text-white/50 mb-0.5">Gastos</p>
-              <p className="text-sm font-bold text-red-300">R$ {Number(totalGastos).toFixed(2).replace('.', ',')}</p>
-            </div>
-            <div className="w-px h-8 bg-white/20" />
-            <div>
-              <p className="text-[10px] text-white/50 mb-0.5">Receitas</p>
-              <p className="text-sm font-bold text-emerald-300">R$ {Number(totalReceitas).toFixed(2).replace('.', ',')}</p>
-            </div>
+        <div className="flex items-center gap-3">
+          <div>
+            <p className="text-[10px] text-white/50 mb-0.5">Gastos</p>
+            <p className="text-sm font-bold text-red-300">R$ {Number(totalGastos).toFixed(2).replace('.', ',')}</p>
+          </div>
+          <div className="w-px h-8 bg-white/20" />
+          <div>
+            <p className="text-[10px] text-white/50 mb-0.5">Receitas</p>
+            <p className="text-sm font-bold text-emerald-300">R$ {Number(totalReceitas).toFixed(2).replace('.', ',')}</p>
           </div>
         </div>
       </div>
@@ -481,39 +451,42 @@ function Header({
   )
 }
 
-// ── App ───────────────────────────────────────────────────────────────────────
-function AppContent() {
+// ── App Principal (autenticado) ───────────────────────────────────────────────
+function AppContent({ user }: { user: User }) {
   const [tab, setTab] = useState<Tab>('chat')
-  const [onboardingFeito] = useState(() => !!localStorage.getItem('onboarding_done'))
-  const [showOnboarding, setShowOnboarding] = useState(!onboardingFeito)
-  const [nomeUsuario, setNomeUsuario] = useState(() => localStorage.getItem('user_name') || '')
   const [menuOpen, setMenuOpen] = useState(false)
 
-  const concluirOnboarding = (nome: string) => {
+  const nomeInicial = user.user_metadata?.full_name || localStorage.getItem('user_name') || ''
+  const [nomeUsuario, setNomeUsuario] = useState(nomeInicial)
+
+  // Onboarding feito?
+  const onboardingDone = !!user.user_metadata?.onboarding_done || !!localStorage.getItem('onboarding_done')
+  const [showOnboarding, setShowOnboarding] = useState(!onboardingDone)
+
+  const concluirOnboarding = () => {
     localStorage.setItem('onboarding_done', '1')
-    localStorage.setItem('user_name', nome)
-    setNomeUsuario(nome)
     setShowOnboarding(false)
+  }
+
+  if (showOnboarding) {
+    return (
+      <OnboardingApp
+        nomeUsuario={nomeUsuario || user.email?.split('@')[0] || 'você'}
+        onConcluir={concluirOnboarding}
+      />
+    )
   }
 
   return (
     <div className="flex flex-col h-screen max-w-lg mx-auto bg-background">
-      {showOnboarding && <Onboarding onConcluir={concluirOnboarding} />}
-
       <SideMenu
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
         nomeUsuario={nomeUsuario}
         onRenomear={setNomeUsuario}
       />
-
       <Header nomeUsuario={nomeUsuario} onMenuOpen={() => setMenuOpen(true)} />
-
-      {/* Tab bar */}
-      <div
-        className="flex border-b bg-background"
-        style={{ borderColor: 'oklch(1 0 0 / 8%)' }}
-      >
+      <div className="flex border-b bg-background" style={{ borderColor: 'oklch(1 0 0 / 8%)' }}>
         {TABS.map(({ id, label, Icon }) => (
           <button
             key={id}
@@ -533,8 +506,6 @@ function AppContent() {
           </button>
         ))}
       </div>
-
-      {/* Conteúdo */}
       <div className="flex-1 overflow-hidden">
         {tab === 'chat' && <ChatPage />}
         {tab === 'gastos' && <GastosPage />}
@@ -546,11 +517,58 @@ function AppContent() {
   )
 }
 
+// ── Raiz com controle de sessão ───────────────────────────────────────────────
+function Root() {
+  const [user, setUser] = useState<User | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+
+  useEffect(() => {
+    // Sessão existente
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+      setAuthLoading(false)
+    })
+
+    // Listener para mudanças de auth (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div
+            className="w-14 h-14 rounded-2xl flex items-center justify-center"
+            style={{ background: 'linear-gradient(135deg, #1a3a8f, #2563eb)' }}
+          >
+            <span className="text-white font-black text-lg">TC</span>
+          </div>
+          <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <AuthPage onAutenticado={() => {}} />
+  }
+
+  return (
+    <AppProvider user={user}>
+      <AppContent user={user} />
+    </AppProvider>
+  )
+}
+
 export default function App() {
   return (
-    <AppProvider>
-      <AppContent />
+    <>
+      <Root />
       <Toaster position="top-center" richColors />
-    </AppProvider>
+    </>
   )
 }
