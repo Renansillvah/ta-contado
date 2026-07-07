@@ -63,7 +63,8 @@ interface Mensagem {
 type IntencaoIA =
   | { acao: 'gasto'; descricao: string; valor: number; categoria: string; comentario: string }
   | { acao: 'receita'; descricao: string; valor: number; categoria: string; comentario: string }
-  | { acao: 'divida'; descricao: string; valor: number; comentario: string }
+  | { acao: 'divida'; descricao: string; valor: number; parcelado?: boolean; parcelas?: number; comentario: string }
+  | { acao: 'pagar_divida'; descricao: string; valor: number; comentario: string }
   | { acao: 'resumo' }
   | { acao: 'conversa'; resposta: string }
   | { acao: 'pedir_valor'; item: string }
@@ -91,50 +92,59 @@ Contexto financeiro atual do usuário:
 
 Retorne APENAS um JSON válido com uma das seguintes estruturas:
 
-1. Para registrar um GASTO (compra, pagamento, despesa):
+1. Para registrar um GASTO (compra, pagamento, despesa do dia a dia):
 {"acao":"gasto","descricao":"nome curto do item","valor":número,"categoria":"Alimentação|Transporte|Saúde|Lazer|Compras|Moradia|Educação|Outros","comentario":"frase curta e acolhedora, máx 8 palavras"}
 
 2. Para registrar uma RECEITA (recebeu dinheiro, salário, freela):
 {"acao":"receita","descricao":"fonte da receita","valor":número,"categoria":"Salário|Freela / Serviço|Venda|Investimento|Aluguel|Outros","comentario":"frase celebrando a receita, máx 8 palavras"}
 
-3. Para registrar uma DÍVIDA (deve, empréstimo, cartão, financiamento):
-{"acao":"divida","descricao":"nome da dívida","valor":número,"comentario":"frase encorajadora, sem julgamento, máx 8 palavras"}
+3. Para registrar uma DÍVIDA nova (deve, tomou empréstimo, financiamento, cartão):
+{"acao":"divida","descricao":"nome da dívida","valor":número,"parcelado":false,"comentario":"frase encorajadora, sem julgamento, máx 8 palavras"}
 
-4. Para ver resumo/saldo:
+4. Para registrar uma DÍVIDA PARCELADA (compra parcelada, financiamento em X vezes):
+{"acao":"divida","descricao":"nome da dívida","valor":número,"parcelado":true,"parcelas":número_de_parcelas,"comentario":"frase encorajadora, máx 8 palavras"}
+Exemplos que ativam esta opção: "comprei celular em 12x de 200", "financiei TV em 6 vezes", "parcelei a geladeira em 10x"
+O "valor" deve ser o valor TOTAL da dívida (parcelas × valor da parcela se informado).
+
+5. Para registrar PAGAMENTO de uma dívida existente (pagou parcela, abateu dívida):
+{"acao":"pagar_divida","descricao":"nome da dívida paga","valor":número,"comentario":"frase encorajadora, máx 8 palavras"}
+Exemplos que ativam esta opção: "paguei 500 do Nubank", "abati 200 da minha dívida", "paguei a parcela do financiamento", "quitei o cartão"
+
+6. Para ver resumo/saldo:
 {"acao":"resumo"}
 
-5. Se menciona algo sem valor:
+7. Se menciona algo sem valor:
 {"acao":"pedir_valor","item":"nome do item mencionado"}
 
-6. Para perguntas gerais sobre finanças ou conversa:
+8. Para perguntas gerais sobre finanças ou conversa:
 {"acao":"conversa","resposta":"sua resposta em português, máximo 2 frases, tom amigável"}
+
+REGRA CRÍTICA para diferenciar GASTO de PAGAMENTO DE DÍVIDA:
+- "paguei a fatura do cartão" → pagar_divida (está quitando uma dívida)
+- "paguei a parcela do empréstimo" → pagar_divida
+- "abati minha dívida" → pagar_divida
+- "comprei no cartão" → gasto (é uma nova compra/despesa)
+- "paguei o almoço" → gasto (despesa do dia a dia)
+- "paguei o aluguel" → gasto (despesa mensal)
 
 Regras para o campo "comentario":
 - Máximo 8 palavras, tom caloroso e humano
 - VARIE sempre — nunca repita a mesma frase
 - Gastos necessários (mercado, luz, água, saúde): reconheça que faz parte
 - Gastos de lazer (bar, cinema, viagem): celebre sem culpa
-- Gastos altos: normalize sem julgamento
 - Receitas: comemore genuinamente
 - Dívidas: encoraje, nunca julgue
+- Pagamento de dívida: elogie o esforço
 - NÃO use "Ótimo!", "Perfeito!", "Show!" genéricos
 - Use linguagem brasileira natural: "Anotado!", "Tá registrado", "Aqui entre nós..."
 
-Exemplos de comentarios:
-gasto mercado 200 → "Alimentação em dia, isso é essencial!"
-gasto bar 80 → "Merece um momento de lazer sim!"
-gasto aluguel 1500 → "Teto garantido, isso é prioridade."
-gasto farmácia 45 → "Saúde não tem preço, cuidado certo."
-receita salário 4500 → "Chegou o salário! Bora cuidar bem dele."
-receita freela 800 → "Freela no bolso, esforço valeu!"
-divida cartão 2000 → "Anotei. Um passo de cada vez, vai passar."
-divida empréstimo 5000 → "Registrado. Juntos vamos resolver isso."
-
 Exemplos completos:
 "almoço 25" → {"acao":"gasto","descricao":"Almoço","valor":25,"categoria":"Alimentação","comentario":"Almoço anotado, energia garantida!"}
-"paguei conta de luz 150" → {"acao":"gasto","descricao":"Conta de luz","valor":150,"categoria":"Moradia","comentario":"Conta básica em dia, ótimo!"}
 "recebi 800 de freela" → {"acao":"receita","descricao":"Freela","valor":800,"categoria":"Freela / Serviço","comentario":"Freela no bolso, esforço valeu!"}
-"devo 2000 no cartão" → {"acao":"divida","descricao":"Cartão de crédito","valor":2000,"categoria":"outros","comentario":"Anotei. Um passo de cada vez."}
+"devo 2000 no cartão" → {"acao":"divida","descricao":"Cartão de crédito","valor":2000,"parcelado":false,"comentario":"Anotei. Um passo de cada vez."}
+"comprei celular em 12x de 300" → {"acao":"divida","descricao":"Celular","valor":3600,"parcelado":true,"parcelas":12,"comentario":"Registrado! Vamos acompanhar juntos."}
+"paguei 500 do Nubank" → {"acao":"pagar_divida","descricao":"Nubank","valor":500,"comentario":"Cada pagamento conta, ótimo!"}
+"quitei a parcela do empréstimo" → {"acao":"pagar_divida","descricao":"Empréstimo","valor":0,"comentario":"Mais um passo para a liberdade!"}
 
 IMPORTANTE: Retorne SOMENTE o JSON, sem texto adicional, sem markdown.`
 
@@ -387,7 +397,7 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
   }, [])
 
-  const { adicionarGasto, adicionarReceita, adicionarDivida, totalGastos, totalReceitas, totalDividas, user, gastos, receitas, dividas, loading } = useApp()
+  const { adicionarGasto, adicionarReceita, adicionarDivida, pagarDivida, totalGastos, totalReceitas, totalDividas, user, gastos, receitas, dividas, loading } = useApp()
 
   const dispararAncoragem = (nome: string) => {
     if (localStorage.getItem(KEY_ANCORAGEM)) return
@@ -615,7 +625,16 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
         }
         resposta = `R$ ${fmtValor(intencao.valor)} de ${intencao.descricao} registrado.\n${intencao.comentario}`
       } else if (intencao.acao === 'divida') {
-        await adicionarDivida({ nome: intencao.descricao, tipo: 'outros', valor_total: intencao.valor, valor_pago: 0, parcelado: false })
+        const isParcelado = !!intencao.parcelado
+        await adicionarDivida({
+          nome: intencao.descricao,
+          tipo: 'outros',
+          valor_total: intencao.valor,
+          valor_pago: 0,
+          parcelado: isParcelado,
+          parcelas: isParcelado ? (intencao.parcelas ?? undefined) : undefined,
+          parcela_atual: isParcelado ? 0 : undefined,
+        })
         const uau = gerarUau('divida', intencao.descricao, intencao.valor, 'outros')
         if (uau) {
           setMensagens(prev => [...prev, { id: (Date.now() + 1).toString(), tipo: 'uau', conteudo: '', timestamp: new Date(), uau }])
@@ -623,7 +642,33 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
           setProcessando(false)
           return
         }
-        resposta = `R$ ${fmtValor(intencao.valor)} de ${intencao.descricao} anotado.\n${intencao.comentario}`
+        if (isParcelado && intencao.parcelas) {
+          const parcela = intencao.valor / intencao.parcelas
+          resposta = `${intencao.descricao} parcelado em ${intencao.parcelas}x de R$ ${fmtValor(parcela)} registrado.\n${intencao.comentario}`
+        } else {
+          resposta = `R$ ${fmtValor(intencao.valor)} de ${intencao.descricao} anotado.\n${intencao.comentario}`
+        }
+      } else if (intencao.acao === 'pagar_divida') {
+        // Tenta encontrar a dívida pelo nome para abater o valor
+        const dividaEncontrada = dividas.find(d => {
+          const nomeLower = d.nome.toLowerCase()
+          const descLower = intencao.descricao.toLowerCase()
+          return nomeLower.includes(descLower) || descLower.includes(nomeLower)
+        })
+
+        if (dividaEncontrada && intencao.valor > 0) {
+          await pagarDivida(dividaEncontrada.id, intencao.valor)
+          const restante = Math.max(0, Number(dividaEncontrada.valor_total) - Number(dividaEncontrada.valor_pago) - intencao.valor)
+          resposta = `Pagamento de R$ ${fmtValor(intencao.valor)} na dívida "${dividaEncontrada.nome}" registrado! ✅\n${intencao.comentario}${restante > 0 ? `\n\nRestam R$ ${fmtValor(restante)} para quitar.` : '\n\nDívida quitada! 🎉'}`
+        } else if (intencao.valor === 0) {
+          // IA não identificou o valor — pede confirmação
+          resposta = `Entendi que você pagou parte da dívida "${intencao.descricao}".\n\nQual foi o valor pago? Por exemplo:\n"Paguei R$ 300 do ${intencao.descricao}"`
+        } else {
+          // Dívida não encontrada pelo nome — orienta o usuário
+          resposta = `Registrei o pagamento de R$ ${fmtValor(intencao.valor)} como gasto.\n\nPara abater de uma dívida específica, acesse a aba **Dívidas** e clique em **Pagar** na dívida desejada.\n\n${intencao.comentario}`
+          // Registra como gasto avulso para não perder o dado
+          await adicionarGasto({ descricao: `Pagamento: ${intencao.descricao}`, valor: intencao.valor, categoria: 'Outros', data: hoje })
+        }
       } else if (intencao.acao === 'resumo') {
         const saldo = totalReceitas - totalGastos
         resposta = `Seu resumo atual:\n\nGastos: R$ ${fmtValor(totalGastos)}\nReceitas: R$ ${fmtValor(totalReceitas)}\nDívidas: R$ ${fmtValor(totalDividas)}\n\nSaldo: R$ ${fmtValor(saldo)}`

@@ -199,66 +199,69 @@ function ResumoSemanal() {
     return porCategoria.reduce((a, b) => b[1].qtd > a[1].qtd ? b : a)
   }, [porCategoria])
 
-  // ── Análise automática ───────────────────────────────────────────────────────
+  // ── Análise automática — só exibe com dados suficientes ─────────────────────
   const analises = useMemo(() => {
     const itens: string[] = []
-    if (totalLancamentos === 0) return itens
+    // Com menos de 3 lançamentos, não faz análise — dados insuficientes
+    if (totalLancamentos < 3) return itens
 
-    if (catMaiorGasto) {
+    if (catMaiorGasto && gastosSemana.length >= 3) {
       const pct = totalGastosSem > 0 ? (catMaiorGasto[1].total / totalGastosSem * 100).toFixed(0) : '0'
       itens.push(`Você gastou mais com ${catMaiorGasto[0]} nesta semana (${pct}% do total de gastos).`)
     }
 
+    // Só comenta saldo negativo se há receitas registradas — sem receitas, saldo negativo é esperado
     if (saldoSemana >= 0 && totalReceitasSem > 0) {
-      itens.push('Seu saldo permaneceu positivo durante este período — ótimo sinal de controle financeiro.')
-    } else if (saldoSemana < 0) {
-      itens.push('Seus gastos superaram as receitas esta semana. Vale revisar onde é possível economizar.')
+      itens.push('Seu saldo permaneceu positivo neste período — ótimo sinal de controle financeiro.')
+    } else if (saldoSemana < 0 && totalReceitasSem > 0) {
+      itens.push('Seus gastos superaram as receitas esta semana. Continue registrando para visualizar melhor.')
     }
 
-    if (porCategoria.length <= 2 && gastosSemana.length >= 3) {
+    if (porCategoria.length <= 2 && gastosSemana.length >= 4) {
       itens.push('Seus gastos ficaram concentrados em poucas categorias, o que facilita a organização.')
-    } else if (porCategoria.length >= 5) {
-      itens.push('Você registrou gastos em várias categorias — uma visão diversificada das suas despesas.')
+    } else if (porCategoria.length >= 5 && gastosSemana.length >= 5) {
+      itens.push('Você registrou gastos em várias categorias — uma visão bem diversificada das suas despesas.')
     }
 
-    if (totalLancamentos >= 5) {
-      itens.push(`Você fez ${totalLancamentos} lançamentos esta semana. Continue registrando para análises mais precisas!`)
-    } else if (totalLancamentos > 0 && totalLancamentos < 3) {
-      itens.push('Quanto mais você registrar, mais precisas serão as análises. Tente registrar gastos diariamente.')
+    if (totalLancamentos >= 7) {
+      itens.push(`Você fez ${totalLancamentos} lançamentos esta semana. Ótimo ritmo de acompanhamento!`)
     }
 
     return itens.slice(0, 3)
   }, [totalLancamentos, catMaiorGasto, totalGastosSem, saldoSemana, totalReceitasSem, porCategoria, gastosSemana.length])
 
-  // ── Oportunidades de melhoria ────────────────────────────────────────────────
+  // ── Oportunidades de melhoria — só com dados minimamente representativos ────
   const oportunidades = useMemo(() => {
     const ops: Array<{ icon: string; texto: string }> = []
 
+    // Precisa de ao menos 3 lançamentos para sugerir cortes
+    if (totalLancamentos < 3) {
+      ops.push({ icon: '📝', texto: 'Registre mais alguns gastos e receitas para que eu possa mostrar sugestões personalizadas.' })
+      return ops
+    }
+
     if (catMaiorGasto && totalGastosSem > 0) {
       const pct = catMaiorGasto[1].total / totalGastosSem * 100
-      if (pct > 40) {
-        ops.push({ icon: '✂️', texto: `Reduzir gastos com ${catMaiorGasto[0]}, que representa ${pct.toFixed(0)}% das despesas desta semana.` })
+      // Só sugere corte se representar mais de 50% dos gastos E houver ao menos 4 registros
+      if (pct > 50 && gastosSemana.length >= 4) {
+        ops.push({ icon: '✂️', texto: `${catMaiorGasto[0]} representa ${pct.toFixed(0)}% dos seus gastos nesta semana. Vale acompanhar essa categoria.` })
       }
     }
 
-    if (dividas.length > 0 && saldoSemana > 0) {
+    if (dividas.length > 0 && saldoSemana > 0 && totalReceitasSem > 0) {
       ops.push({ icon: '💳', texto: 'Aproveitar o saldo positivo para priorizar o pagamento de dívidas.' })
     }
 
-    if (totalLancamentos < 5) {
-      ops.push({ icon: '📝', texto: 'Aumentar a frequência dos registros para ter uma visão mais completa das suas finanças.' })
+    if (totalReceitasSem === 0 && totalGastosSem > 0) {
+      ops.push({ icon: '💰', texto: 'Registre suas receitas desta semana para eu calcular seu saldo real.' })
     }
 
-    if (totalReceitasSem === 0) {
-      ops.push({ icon: '💰', texto: 'Registrar suas receitas desta semana para visualizar seu saldo real.' })
-    }
-
-    if (totalGastosSem > 0 && totalReceitasSem > 0 && totalReceitasSem > totalGastosSem * 1.1) {
-      ops.push({ icon: '🎯', texto: 'Criar uma meta mensal de poupança — você está com saldo favorável para isso.' })
+    if (totalGastosSem > 0 && totalReceitasSem > 0 && totalReceitasSem > totalGastosSem * 1.2) {
+      ops.push({ icon: '🎯', texto: 'Você está com saldo positivo. Um ótimo momento para criar uma meta de poupança.' })
     }
 
     return ops.slice(0, 3)
-  }, [catMaiorGasto, totalGastosSem, dividas.length, saldoSemana, totalLancamentos, totalReceitasSem])
+  }, [catMaiorGasto, totalGastosSem, gastosSemana.length, dividas.length, saldoSemana, totalLancamentos, totalReceitasSem])
 
   // ── Dados do gráfico de gastos por dia da semana ─────────────────────────────
   const diasSemana = useMemo(() => {
@@ -674,7 +677,10 @@ export default function ResumoPage() {
           {/* ── Card principal: saldo + saúde ── */}
           <div
             className="rounded-2xl p-5"
-            style={{ backgroundColor: 'oklch(0.48 0.16 162)', boxShadow: '0 4px 24px oklch(0.48 0.16 162 / 35%)' }}
+            style={{
+              backgroundColor: saldoReal < 0 ? 'oklch(0.38 0.16 20)' : 'oklch(0.48 0.16 162)',
+              boxShadow: saldoReal < 0 ? '0 4px 24px oklch(0.38 0.16 20 / 40%)' : '0 4px 24px oklch(0.48 0.16 162 / 35%)',
+            }}
           >
             <p className="text-[11px] text-white/60 uppercase tracking-widest mb-1 font-medium">{MES_LABEL}</p>
 
@@ -683,7 +689,7 @@ export default function ResumoPage() {
               <div>
                 <p className="text-3xl font-bold text-white leading-tight">{formatBRL(saldoReal)}</p>
                 <p className="text-[11px] text-white/60 mt-0.5">
-                  {saldoReal >= 0 ? 'sobrando este mês' : 'no vermelho este mês'}
+                  {saldoReal >= 0 ? 'sobrando este mês' : '⚠️ no vermelho este mês'}
                   {aReceberMes > 0 && ` · +${formatBRL(aReceberMes)} a receber`}
                 </p>
               </div>
