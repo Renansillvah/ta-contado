@@ -170,17 +170,20 @@ function ResumoSemanal() {
   const labelPeriodo = `${format(inicioSemana, "d 'de' MMM", { locale: ptBR })} – ${format(fimSemana, "d 'de' MMM", { locale: ptBR })}`
 
   // ── Dados da semana ──────────────────────────────────────────────────────────
-  const gastosSemana   = useMemo(() => gastos.filter(g => g.data >= inicioStr && g.data <= fimStr), [gastos, inicioStr, fimStr])
-  const receitasSemana = useMemo(() => receitas.filter(r => r.data >= inicioStr && r.data <= fimStr), [receitas, inicioStr, fimStr])
-  const dividasSemana  = useMemo(() => dividas.filter(d => {
+  const gastosSemana        = useMemo(() => gastos.filter(g => g.data >= inicioStr && g.data <= fimStr), [gastos, inicioStr, fimStr])
+  // Apenas receitas já recebidas (não inclui "a_receber" para não inflar o saldo)
+  const receitasSemana      = useMemo(() => receitas.filter(r => r.data >= inicioStr && r.data <= fimStr && r.tipo === 'recebido'), [receitas, inicioStr, fimStr])
+  const receitasAReceberSem = useMemo(() => receitas.filter(r => r.data >= inicioStr && r.data <= fimStr && r.tipo === 'a_receber'), [receitas, inicioStr, fimStr])
+  const dividasSemana       = useMemo(() => dividas.filter(d => {
     const dt = d.created_at?.split('T')[0] ?? ''
     return dt >= inicioStr && dt <= fimStr
   }), [dividas, inicioStr, fimStr])
 
-  const totalGastosSem   = useMemo(() => gastosSemana.reduce((s, g) => s + Number(g.valor), 0), [gastosSemana])
-  const totalReceitasSem = useMemo(() => receitasSemana.reduce((s, r) => s + Number(r.valor), 0), [receitasSemana])
-  const saldoSemana      = totalReceitasSem - totalGastosSem
-  const totalLancamentos = gastosSemana.length + receitasSemana.length + dividasSemana.length
+  const totalGastosSem      = useMemo(() => gastosSemana.reduce((s, g) => s + Number(g.valor), 0), [gastosSemana])
+  const totalReceitasSem    = useMemo(() => receitasSemana.reduce((s, r) => s + Number(r.valor), 0), [receitasSemana])
+  const totalAReceberSem    = useMemo(() => receitasAReceberSem.reduce((s, r) => s + Number(r.valor), 0), [receitasAReceberSem])
+  const saldoSemana         = totalReceitasSem - totalGastosSem
+  const totalLancamentos    = gastosSemana.length + receitasSemana.length + receitasAReceberSem.length + dividasSemana.length
 
   // ── Categorias ───────────────────────────────────────────────────────────────
   const porCategoria = useMemo(() => {
@@ -322,7 +325,10 @@ function ResumoSemanal() {
       {/* ── Card principal da semana ── */}
       <div
         className="rounded-2xl p-5"
-        style={{ backgroundColor: 'oklch(0.48 0.16 162)', boxShadow: '0 4px 24px oklch(0.48 0.16 162 / 35%)' }}
+        style={{
+          backgroundColor: saldoSemana < 0 ? 'oklch(0.38 0.16 20)' : 'oklch(0.48 0.16 162)',
+          boxShadow: saldoSemana < 0 ? '0 4px 24px oklch(0.38 0.16 20 / 40%)' : '0 4px 24px oklch(0.48 0.16 162 / 35%)',
+        }}
       >
         <div className="flex items-center gap-2 mb-3">
           <Calendar size={13} className="text-white/70" />
@@ -335,7 +341,8 @@ function ResumoSemanal() {
           {saldoSemana >= 0 ? '+' : ''}R$ {Math.abs(saldoSemana).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
         </p>
         <p className="text-[11px] text-white/60 mb-4">
-          {saldoSemana >= 0 ? 'sobrando nesta semana' : 'no vermelho nesta semana'}
+          {saldoSemana >= 0 ? 'sobrando nesta semana' : '⚠️ no vermelho nesta semana'}
+          {totalAReceberSem > 0 && ` · +R$ ${totalAReceberSem.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} a receber`}
         </p>
 
         <div className="grid grid-cols-3 gap-2">

@@ -381,6 +381,13 @@ export default function DividasPage() {
                 )
               }
 
+              // Cálculos de parcela
+              const parcelaAtual   = d.parcela_atual ?? 0
+              const totalParcelas  = d.parcelas ?? 0
+              const valorParcela   = d.parcelado && totalParcelas > 0 ? Number(d.valor_total) / totalParcelas : 0
+              const pctParcelas    = totalParcelas > 0 ? Math.min((parcelaAtual / totalParcelas) * 100, 100) : 0
+              const parcelasRestam = totalParcelas - parcelaAtual
+
               return (
                 <div
                   key={d.id}
@@ -410,7 +417,7 @@ export default function DividasPage() {
                         <p className={`font-semibold text-sm leading-tight truncate ${quitada ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
                           {d.nome}
                         </p>
-                        {/* Meta-info: credor, vencimento, parcelas */}
+                        {/* Meta-info: credor, vencimento */}
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           {d.credor && (
                             <span className="text-[11px] text-muted-foreground">{d.credor}</span>
@@ -422,11 +429,6 @@ export default function DividasPage() {
                                 : diff === 0 ? 'Vence hoje'
                                 : `Vence ${format(parseISO(d.vencimento), 'dd/MM', { locale: ptBR })}`
                               }
-                            </span>
-                          )}
-                          {d.parcelado && d.parcelas && (
-                            <span className="text-[11px] text-muted-foreground">
-                              {d.parcela_atual ?? 0}/{d.parcelas}x
                             </span>
                           )}
                           {quitada && (
@@ -456,8 +458,51 @@ export default function DividasPage() {
                     </div>
                   </div>
 
-                  {/* Barra de progresso — só quando há pagamento parcial */}
-                  {pct > 0 && (
+                  {/* ── Card de parcelas — só quando parcelado ── */}
+                  {d.parcelado && totalParcelas > 0 && !quitada && (
+                    <div
+                      className="rounded-xl px-3 py-2.5 mb-2.5"
+                      style={{ background: 'oklch(0.48 0.16 162 / 10%)', border: '1px solid oklch(0.55 0.18 162 / 20%)' }}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'oklch(0.65 0.14 162)' }}>
+                            Parcelado
+                          </span>
+                          {/* Badge parcela atual / total */}
+                          <span
+                            className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                            style={{ background: 'oklch(0.48 0.16 162 / 20%)', color: 'oklch(0.72 0.15 162)' }}
+                          >
+                            {parcelaAtual}/{totalParcelas}x
+                          </span>
+                        </div>
+                        {valorParcela > 0 && (
+                          <span className="text-[12px] font-bold" style={{ color: 'oklch(0.72 0.15 162)' }}>
+                            R$ {fmtBRL(valorParcela)}<span className="text-[10px] font-normal opacity-70">/parcela</span>
+                          </span>
+                        )}
+                      </div>
+                      {/* Barra de progresso de parcelas */}
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'oklch(0.48 0.16 162 / 15%)' }}>
+                        <div
+                          className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${pctParcelas}%`, backgroundColor: 'oklch(0.62 0.18 162)' }}
+                        />
+                      </div>
+                      <p className="text-[10px] mt-1 opacity-60 text-foreground">
+                        {parcelaAtual === 0
+                          ? `${totalParcelas} parcelas restantes`
+                          : parcelasRestam > 0
+                          ? `${parcelasRestam} parcela${parcelasRestam > 1 ? 's' : ''} restante${parcelasRestam > 1 ? 's' : ''}`
+                          : 'Última parcela paga'
+                        }
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Barra de progresso de valor pago — só quando há pagamento parcial e não é parcelado */}
+                  {pct > 0 && !d.parcelado && (
                     <div className="h-1.5 bg-secondary rounded-full overflow-hidden mb-2">
                       <div
                         className="h-full rounded-full transition-all duration-700 bg-primary"
