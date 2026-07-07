@@ -10,6 +10,7 @@ import ReceitasPage from '@/pages/ReceitasPage'
 import ResumoPage from '@/pages/ResumoPage'
 import AuthPage from '@/pages/AuthPage'
 import OnboardingApp from '@/components/OnboardingApp'
+import SplashScreen from '@/components/SplashScreen'
 import { WhatsAppConnect } from '@/components/WhatsAppConnect'
 import { Toaster } from 'sonner'
 import { toast } from 'sonner'
@@ -535,6 +536,8 @@ function AppContent({ user }: { user: User }) {
 function Root() {
   const [user, setUser] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
+  const splashVisto = !!localStorage.getItem('splash_visto')
+  const [showSplash, setShowSplash] = useState(!splashVisto)
 
   useEffect(() => {
     // Sessão existente
@@ -550,6 +553,16 @@ function Root() {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  const finalizarSplash = () => {
+    localStorage.setItem('splash_visto', '1')
+    setShowSplash(false)
+  }
+
+  // Splash aparece uma única vez, independente de auth
+  if (showSplash) {
+    return <SplashScreen onFinalizar={finalizarSplash} />
+  }
 
   if (authLoading) {
     return (
