@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Mic, Send, WifiOff } from 'lucide-react'
+import { Mic, Send, WifiOff, Utensils, Car, HeartPulse, Gamepad2, ShoppingBag, Home, BookOpen, Wallet, CreditCard, TrendingUp } from 'lucide-react'
 import { lerPerfil } from '@/lib/onboardingPerfil'
 
 function AudioBars({ volumes }: { volumes: [number, number, number] }) {
@@ -63,6 +63,7 @@ interface Mensagem {
 type IntencaoIA =
   | { acao: 'gasto'; descricao: string; valor: number; categoria: string; comentario: string }
   | { acao: 'receita'; descricao: string; valor: number; categoria: string; comentario: string }
+  | { acao: 'recebimento_parcelado'; descricao: string; valor_total: number; parcelas: number; comentario: string }
   | { acao: 'divida'; descricao: string; valor: number; parcelado?: boolean; parcelas?: number; comentario: string }
   | { acao: 'pagar_divida'; descricao: string; valor: number; comentario: string }
   | { acao: 'resumo' }
@@ -95,29 +96,40 @@ Retorne APENAS um JSON válido com uma das seguintes estruturas:
 1. Para registrar um GASTO (compra, pagamento, despesa do dia a dia):
 {"acao":"gasto","descricao":"nome curto do item","valor":número,"categoria":"Alimentação|Transporte|Saúde|Lazer|Compras|Moradia|Educação|Outros","comentario":"frase curta e acolhedora, máx 8 palavras"}
 
-2. Para registrar uma RECEITA (recebeu dinheiro, salário, freela):
+2. Para registrar uma RECEITA (recebeu dinheiro, salário, freela — valor à vista ou já recebido):
 {"acao":"receita","descricao":"fonte da receita","valor":número,"categoria":"Salário|Freela / Serviço|Venda|Investimento|Aluguel|Outros","comentario":"frase celebrando a receita, máx 8 palavras"}
 
-3. Para registrar uma DÍVIDA nova (deve, tomou empréstimo, financiamento, cartão):
+3. Para registrar um RECEBIMENTO PARCELADO (tem dinheiro para receber em parcelas futuras — é uma entrada, não uma dívida):
+{"acao":"recebimento_parcelado","descricao":"descrição do recebimento","valor_total":número,"parcelas":número,"comentario":"frase animada, máx 8 palavras"}
+Exemplos que ativam esta opção: "tenho 10 mil para receber em 10x", "vou receber 5000 em 5 vezes", "tenho uma parcela de 1000 para receber", "recebi 300 de 12 parcelas"
+O "valor_total" deve ser o valor TOTAL (se disser R$10k em 10x → valor_total: 10000, parcelas: 10)
+
+4. Para registrar uma DÍVIDA nova (deve, tomou empréstimo, financiamento, cartão):
 {"acao":"divida","descricao":"nome da dívida","valor":número,"parcelado":false,"comentario":"frase encorajadora, sem julgamento, máx 8 palavras"}
 
-4. Para registrar uma DÍVIDA PARCELADA (compra parcelada, financiamento em X vezes):
+5. Para registrar uma DÍVIDA PARCELADA (compra parcelada, financiamento em X vezes):
 {"acao":"divida","descricao":"nome da dívida","valor":número,"parcelado":true,"parcelas":número_de_parcelas,"comentario":"frase encorajadora, máx 8 palavras"}
 Exemplos que ativam esta opção: "comprei celular em 12x de 200", "financiei TV em 6 vezes", "parcelei a geladeira em 10x"
 O "valor" deve ser o valor TOTAL da dívida (parcelas × valor da parcela se informado).
 
-5. Para registrar PAGAMENTO de uma dívida existente (pagou parcela, abateu dívida):
+6. Para registrar PAGAMENTO de uma dívida existente (pagou parcela, abateu dívida):
 {"acao":"pagar_divida","descricao":"nome da dívida paga","valor":número,"comentario":"frase encorajadora, máx 8 palavras"}
 Exemplos que ativam esta opção: "paguei 500 do Nubank", "abati 200 da minha dívida", "paguei a parcela do financiamento", "quitei o cartão"
 
-6. Para ver resumo/saldo:
+7. Para ver resumo/saldo:
 {"acao":"resumo"}
 
-7. Se menciona algo sem valor:
+8. Se menciona algo sem valor:
 {"acao":"pedir_valor","item":"nome do item mencionado"}
 
-8. Para perguntas gerais sobre finanças ou conversa:
+9. Para perguntas gerais sobre finanças ou conversa:
 {"acao":"conversa","resposta":"sua resposta em português, máximo 2 frases, tom amigável"}
+
+REGRA CRÍTICA para diferenciar RECEBIMENTO PARCELADO de DÍVIDA PARCELADA:
+- "tenho 10k para RECEBER em 10x" → recebimento_parcelado (dinheiro VAI ENTRAR no bolso)
+- "vou receber 5000 em 5 vezes" → recebimento_parcelado
+- "comprei celular em 12x" → divida (dinheiro VAI SAIR)
+- A diferença fundamental: recebimento = dinheiro ENTRANDO, dívida = dinheiro SAINDO
 
 REGRA CRÍTICA para diferenciar GASTO de PAGAMENTO DE DÍVIDA:
 - "paguei a fatura do cartão" → pagar_divida (está quitando uma dívida)
@@ -141,6 +153,7 @@ Regras para o campo "comentario":
 Exemplos completos:
 "almoço 25" → {"acao":"gasto","descricao":"Almoço","valor":25,"categoria":"Alimentação","comentario":"Almoço anotado, energia garantida!"}
 "recebi 800 de freela" → {"acao":"receita","descricao":"Freela","valor":800,"categoria":"Freela / Serviço","comentario":"Freela no bolso, esforço valeu!"}
+"tenho 10 mil para receber em 10x" → {"acao":"recebimento_parcelado","descricao":"Recebimento","valor_total":10000,"parcelas":10,"comentario":"Anotado! Vamos acompanhar cada parcela."}
 "devo 2000 no cartão" → {"acao":"divida","descricao":"Cartão de crédito","valor":2000,"parcelado":false,"comentario":"Anotei. Um passo de cada vez."}
 "comprei celular em 12x de 300" → {"acao":"divida","descricao":"Celular","valor":3600,"parcelado":true,"parcelas":12,"comentario":"Registrado! Vamos acompanhar juntos."}
 "paguei 500 do Nubank" → {"acao":"pagar_divida","descricao":"Nubank","valor":500,"comentario":"Cada pagamento conta, ótimo!"}
@@ -328,10 +341,10 @@ function gerarUau(
     const meses = Math.ceil(valor / 500)
     return {
       categoria: 'divida',
-      emoji: '💳',
+      emoji: 'divida',
       label: descricao,
       valor,
-      insight: `💡 Se você separar aproximadamente R$ 500 por mês, poderá quitar essa dívida em cerca de ${meses} ${meses === 1 ? 'mês' : 'meses'}.`,
+      insight: `Se você separar aproximadamente R$ 500 por mês, poderá quitar essa dívida em cerca de ${meses} ${meses === 1 ? 'mês' : 'meses'}.`,
       followUp: 'Quer adicionar mais dívidas para eu calcular sua situação completa?',
     }
   }
@@ -340,26 +353,21 @@ function gerarUau(
     const reserva = Math.round(valor * 0.1 / 10) * 10
     return {
       categoria: 'receita',
-      emoji: '💰',
+      emoji: 'receita',
       label: descricao,
       valor,
-      insight: `💡 Você acabou de registrar sua primeira receita.\n\nGuardar pelo menos 10% — cerca de R$ ${fmt(reserva)} — é um ótimo começo para uma reserva de emergência.`,
+      insight: `Você acabou de registrar sua primeira receita.\n\nGuardar pelo menos 10% — cerca de R$ ${fmt(reserva)} — é um ótimo começo para uma reserva de emergência.`,
       followUp: 'Quer registrar seus gastos para eu calcular quanto sobra no final do mês?',
     }
   }
 
   // gasto
-  const emojiMap: Record<string, string> = {
-    Alimentação: '🍽️', Transporte: '🚗', Saúde: '💊',
-    Lazer: '🎬', Compras: '🛍️', Moradia: '🏠',
-    Educação: '📚', Outros: '📌',
-  }
   return {
     categoria: 'gasto',
-    emoji: emojiMap[categoria] ?? '📌',
+    emoji: categoria,
     label: descricao,
     valor,
-    insight: `💡 Você acabou de registrar seu primeiro gasto.\n\nSe continuar registrando seus gastos diariamente, conseguirei mostrar exatamente para onde seu dinheiro está indo.`,
+    insight: `Você acabou de registrar seu primeiro gasto.\n\nSe continuar registrando seus gastos diariamente, conseguirei mostrar exatamente para onde seu dinheiro está indo.`,
     followUp: 'Quer definir uma meta de gastos para este mês?',
   }
 }
@@ -624,6 +632,23 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
           return
         }
         resposta = `R$ ${fmtValor(intencao.valor)} de ${intencao.descricao} registrado.\n${intencao.comentario}`
+      } else if (intencao.acao === 'recebimento_parcelado') {
+        const parcelas = intencao.parcelas || 1
+        const valorParcela = intencao.valor_total / parcelas
+        const hoje2 = new Date()
+        // Cria uma receita "a_receber" para cada parcela, com datas mensais
+        for (let i = 0; i < parcelas; i++) {
+          const dataVenc = new Date(hoje2.getFullYear(), hoje2.getMonth() + i, hoje2.getDate())
+          const dataStr = dataVenc.toISOString().split('T')[0]
+          await adicionarReceita({
+            descricao: parcelas > 1 ? `${intencao.descricao} (${i + 1}/${parcelas})` : intencao.descricao,
+            categoria: 'Recebimento',
+            valor: valorParcela,
+            tipo: 'a_receber',
+            data: dataStr,
+          })
+        }
+        resposta = `Registrei ${parcelas}x de R$ ${fmtValor(valorParcela)} para receber nos próximos meses. ${intencao.comentario}\n\nVocê pode ver e marcar cada parcela como recebida na aba **Receitas > Recebimentos**.`
       } else if (intencao.acao === 'divida') {
         const isParcelado = !!intencao.parcelado
         await adicionarDivida({
@@ -1112,7 +1137,25 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
-                        <span className="text-xl">{u.emoji}</span>
+                        <div
+                          className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                          style={{ background: corBg }}
+                        >
+                          {u.categoria === 'divida' && <CreditCard size={16} style={{ color: corValor }} />}
+                          {u.categoria === 'receita' && <TrendingUp size={16} style={{ color: corValor }} />}
+                          {u.categoria === 'gasto' && (() => {
+                            const catIconMap: Record<string, React.ReactNode> = {
+                              'Alimentação': <Utensils size={16} style={{ color: corValor }} />,
+                              'Transporte':  <Car size={16} style={{ color: corValor }} />,
+                              'Saúde':       <HeartPulse size={16} style={{ color: corValor }} />,
+                              'Lazer':       <Gamepad2 size={16} style={{ color: corValor }} />,
+                              'Compras':     <ShoppingBag size={16} style={{ color: corValor }} />,
+                              'Moradia':     <Home size={16} style={{ color: corValor }} />,
+                              'Educação':    <BookOpen size={16} style={{ color: corValor }} />,
+                            }
+                            return catIconMap[u.emoji] ?? <Wallet size={16} style={{ color: corValor }} />
+                          })()}
+                        </div>
                         <p className="text-[13px] font-semibold text-foreground leading-tight">{u.label}</p>
                       </div>
                       <p className="text-[15px] font-black" style={{ color: corValor, fontFamily: 'Poppins,sans-serif' }}>

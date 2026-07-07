@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Plus, Trash2, Pencil, Briefcase, Wrench, Home, ShoppingCart, TrendingUp, Mic2, Bike, Video, Package, CheckCircle, Clock, SlidersHorizontal, X, Zap, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, Pencil, Briefcase, Wrench, Home, ShoppingCart, TrendingUp, Mic2, Bike, Video, Package, CheckCircle, Clock, SlidersHorizontal, X, Zap, RefreshCw, AlertTriangle, CalendarClock, ChevronDown, ChevronUp } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { format, isToday, isYesterday, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -76,6 +76,10 @@ export default function ReceitasPage() {
   const [salvando, setSalvando] = useState(false)
   const [marcandoId, setMarcandoId] = useState<string | null>(null)
   const [confirmandoId, setConfirmandoId] = useState<string | null>(null)
+  const [gruposExpandidos, setGruposExpandidos] = useState<Record<string, boolean>>({})
+
+  const toggleGrupo = (chave: string) =>
+    setGruposExpandidos(prev => ({ ...prev, [chave]: !prev[chave] }))
 
   const receitasGanhos = useMemo(() =>
     receitas.filter(r => categoriaNatureza(r.categoria) === 'ganho'),
@@ -135,6 +139,27 @@ export default function ReceitasPage() {
   const totalFiltrado = useMemo(() =>
     receitasFiltradas.filter(r => r.tipo === 'recebido').reduce((s, r) => s + Number(r.valor), 0),
   [receitasFiltradas])
+
+  // Grupos de recebimentos parcelados (detecta padrão "Descrição (X/Yx)")
+  const gruposParcelados = useMemo(() => {
+    if (subAba !== 'recebimento') return []
+    const mapa: Record<string, {
+      base: string; total: number; parcelas: any[];
+      recebidas: number; aReceber: number; valorParcela: number
+    }> = {}
+    receitasRecebimentos.forEach(r => {
+      const m = r.descricao.match(/^(.+)\s+\((\d+)\/(\d+)x\)$/)
+      if (!m) return
+      const chave = `${m[1]}__${m[3]}`
+      if (!mapa[chave]) {
+        mapa[chave] = { base: m[1], total: parseInt(m[3]), parcelas: [], recebidas: 0, aReceber: 0, valorParcela: Number(r.valor) }
+      }
+      mapa[chave].parcelas.push(r)
+      if (r.tipo === 'recebido') mapa[chave].recebidas++
+      else mapa[chave].aReceber++
+    })
+    return Object.entries(mapa).filter(([, g]) => g.total > 1)
+  }, [receitasRecebimentos, subAba])
 
   const trocarSubAba = (aba: 'ganho' | 'recebimento') => {
     setSubAba(aba)
@@ -201,7 +226,18 @@ export default function ReceitasPage() {
     return null
   }, [totalRecebidoMes, totalAReceberMes, pctRecebido])
 
-  const renderItem = (r: any) => (
+  // Detecta se a descrição tem padrão de parcela "(X/Yx)" gerado pela IA
+  const extrairParcela = (desc: string): { base: string; atual: number; total: number } | null => {
+    const m = desc.match(/^(.+)\s+\((\d+)\/(\d+)x\)$/)
+    if (!m) return null
+    return { base: m[1], atual: parseInt(m[2]), total: parseInt(m[3]) }
+  }
+
+  const renderItem = (r: any) => {
+    const parcela = r.categoria === 'Recebimento' ? extrairParcela(r.descricao) : null
+    const nomeMostrar = parcela ? parcela.base : r.descricao
+
+    return (
     <div key={r.id}>
       {confirmandoId === r.id ? (
         <div
@@ -238,10 +274,23 @@ export default function ReceitasPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-secondary flex items-center justify-center shrink-0">
-                <CatIcon categoria={r.categoria} size={16} />
+                {parcela
+                  ? <CalendarClock size={16} className="text-sky-400" />
+                  : <CatIcon categoria={r.categoria} size={16} />
+                }
               </div>
               <div className="min-w-0 flex-1">
-                <p className="font-medium text-sm text-foreground leading-tight truncate">{r.descricao}</p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <p className="font-medium text-sm text-foreground leading-tight truncate">{nomeMostrar}</p>
+                  {parcela && (
+                    <span
+                      className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
+                      style={{ background: 'oklch(0.55 0.18 230 / 20%)', color: 'oklch(0.65 0.16 230)' }}
+                    >
+                      {parcela.atual}/{parcela.total}x
+                    </span>
+                  )}
+                </div>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   {r.categoria} · {format(new Date(r.data + 'T12:00:00'), "d 'de' MMM", { locale: ptBR })}
                 </p>
@@ -274,7 +323,8 @@ export default function ReceitasPage() {
         </div>
       )}
     </div>
-  )
+    )
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -432,6 +482,108 @@ export default function ReceitasPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Cards de recebimentos parcelados ── */}
+      {subAba === 'recebimento' && gruposParcelados.length > 0 && (
+        <div className="px-4 pb-2 space-y-2">
+          {gruposParcelados.map(([chave, g]) => {
+            const pct = g.total > 0 ? Math.min((g.recebidas / g.total) * 100, 100) : 0
+            const totalValor = g.valorParcela * g.total
+            const totalRecebido = g.valorParcela * g.recebidas
+            const expandido = gruposExpandidos[chave] ?? false
+            return (
+              <div
+                key={chave}
+                className="rounded-2xl overflow-hidden"
+                style={{ border: '1.5px solid oklch(0.55 0.18 230 / 30%)', background: 'oklch(0.20 0.04 240)' }}
+              >
+                {/* Cabeçalho do grupo */}
+                <button
+                  className="w-full px-4 py-3.5 flex items-center gap-3"
+                  onClick={() => toggleGrupo(chave)}
+                >
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: 'oklch(0.55 0.18 230 / 15%)' }}
+                  >
+                    <CalendarClock size={16} style={{ color: 'oklch(0.65 0.16 230)' }} />
+                  </div>
+                  <div className="flex-1 text-left min-w-0">
+                    <p className="font-semibold text-sm text-foreground truncate">{g.base}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {g.recebidas}/{g.total} parcelas · R$ {g.valorParcela.toFixed(2).replace('.', ',')}/mês
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0 mr-1">
+                    <p className="text-sm font-bold text-primary">
+                      R$ {totalRecebido.toFixed(2).replace('.', ',')}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      de R$ {totalValor.toFixed(2).replace('.', ',')}
+                    </p>
+                  </div>
+                  {expandido
+                    ? <ChevronUp size={15} className="text-muted-foreground shrink-0" />
+                    : <ChevronDown size={15} className="text-muted-foreground shrink-0" />
+                  }
+                </button>
+                {/* Barra de progresso */}
+                <div className="px-4 pb-3">
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'oklch(0.28 0.05 240)' }}>
+                    <div
+                      className="h-full rounded-full transition-all duration-700"
+                      style={{ width: `${pct}%`, backgroundColor: pct >= 100 ? 'oklch(0.62 0.18 162)' : 'oklch(0.55 0.18 230)' }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">{pct.toFixed(0)}% recebido · {g.aReceber} parcela{g.aReceber !== 1 ? 's' : ''} pendente{g.aReceber !== 1 ? 's' : ''}</p>
+                </div>
+                {/* Parcelas individuais (expandido) */}
+                {expandido && (
+                  <div className="border-t px-4 py-3 space-y-2" style={{ borderColor: 'oklch(0.55 0.18 230 / 20%)' }}>
+                    {g.parcelas.sort((a: any, b: any) => a.data.localeCompare(b.data)).map((p: any) => {
+                      const parc = extrairParcela(p.descricao)
+                      return (
+                        <div key={p.id} className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0"
+                              style={p.tipo === 'recebido'
+                                ? { background: 'oklch(0.48 0.16 162 / 20%)', color: 'oklch(0.62 0.18 162)' }
+                                : { background: 'oklch(0.55 0.18 230 / 15%)', color: 'oklch(0.65 0.16 230)' }
+                              }
+                            >
+                              {parc?.atual ?? '?'}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              {format(new Date(p.data + 'T12:00:00'), "d 'de' MMM", { locale: ptBR })}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-primary">+R$ {Number(p.valor).toFixed(2).replace('.', ',')}</span>
+                            {p.tipo === 'a_receber' && (
+                              <button
+                                onClick={() => handleMarcarRecebido(p.id)}
+                                disabled={marcandoId === p.id}
+                                className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold disabled:opacity-50 transition-all active:scale-95"
+                                style={{ background: 'oklch(0.62 0.18 162 / 15%)', color: 'oklch(0.62 0.18 162)' }}
+                              >
+                                {marcandoId === p.id ? <Clock size={10} className="animate-spin" /> : <><Zap size={9} /> Recebi!</>}
+                              </button>
+                            )}
+                            {p.tipo === 'recebido' && (
+                              <CheckCircle size={13} style={{ color: 'oklch(0.62 0.18 162)' }} />
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
