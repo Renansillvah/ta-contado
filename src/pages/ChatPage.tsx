@@ -641,7 +641,7 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
           const dataVenc = new Date(hoje2.getFullYear(), hoje2.getMonth() + i, hoje2.getDate())
           const dataStr = dataVenc.toISOString().split('T')[0]
           await adicionarReceita({
-            descricao: parcelas > 1 ? `${intencao.descricao} (${i + 1}/${parcelas})` : intencao.descricao,
+            descricao: parcelas > 1 ? `${intencao.descricao} (${i + 1}/${parcelas}x)` : intencao.descricao,
             categoria: 'Recebimento',
             valor: valorParcela,
             tipo: 'a_receber',

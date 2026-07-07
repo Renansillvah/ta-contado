@@ -63,7 +63,7 @@ function agruparPorData(lista: any[]) {
 
 // Detecta se a descrição tem padrão de parcela "(X/Yx)"
 function extrairParcela(desc: string): { base: string; atual: number; total: number } | null {
-  const m = desc.match(/^(.+)\s+\((\d+)\/(\d+)x\)$/)
+  const m = desc.match(/^(.+)\s+\((\d+)\/(\d+)x?\)$/)
   if (!m) return null
   return { base: m[1], atual: parseInt(m[2]), total: parseInt(m[3]) }
 }
