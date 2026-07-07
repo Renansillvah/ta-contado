@@ -156,6 +156,55 @@ const MSG_INICIAL: Mensagem = {
   timestamp: new Date(),
 }
 
+async function gerarCumprimentoDiario(
+  nome: string,
+  totalGastos: number,
+  totalReceitas: number,
+  totalDividas: number
+): Promise<string> {
+  const apiKey = import.meta.env.VITE_OPENAI_API_KEY
+  if (!apiKey) return ''
+
+  const hora = new Date().getHours()
+  const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
+  const primeiro = nome.split(' ')[0] || ''
+  const saldo = totalReceitas - totalGastos
+
+  const prompt = `Você é um assistente financeiro pessoal brasileiro, acolhedor como um amigo próximo.
+
+Dados do usuário:
+- Nome: ${primeiro || 'amigo'}
+- Saudação do horário: ${saudacao}
+- Gastos acumulados: R$ ${totalGastos.toFixed(2)}
+- Receitas acumuladas: R$ ${totalReceitas.toFixed(2)}
+- Dívidas: R$ ${totalDividas.toFixed(2)}
+- Saldo atual: R$ ${saldo.toFixed(2)}
+
+Gere uma mensagem de boas-vindas para o primeiro acesso do dia. Regras:
+- Comece com "${saudacao}${primeiro ? `, ${primeiro}` : ''}!"
+- Máximo 3 linhas curtas
+- Mencione algo concreto do contexto financeiro (saldo, gastos, etc.) de forma natural
+- Tom: caloroso, motivador, como amigo — não como app
+- NÃO use markdown, asteriscos ou listas
+- Termine com algo que convide o usuário a registrar algo ou checar o resumo
+- Varie sempre, nunca use frases genéricas`
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 120,
+      temperature: 0.9,
+    }),
+  })
+
+  if (!response.ok) return ''
+  const data = await response.json()
+  return data.choices?.[0]?.message?.content?.trim() ?? ''
+}
+
 export default function ChatPage() {
   const [mensagens, setMensagens] = useState<Mensagem[]>([MSG_INICIAL])
   const [input, setInput] = useState('')
@@ -173,6 +222,26 @@ export default function ChatPage() {
   }, [])
 
   const { adicionarGasto, adicionarReceita, adicionarDivida, totalGastos, totalReceitas, totalDividas } = useApp()
+
+  // Cumprimento diário — dispara uma vez por dia após dados carregarem
+  useEffect(() => {
+    const hoje = new Date().toISOString().split('T')[0]
+    const ultimoCumprimento = localStorage.getItem('ultimo_cumprimento')
+    if (ultimoCumprimento === hoje) return
+
+    const nome = localStorage.getItem('user_name') || ''
+    gerarCumprimentoDiario(nome, totalGastos, totalReceitas, totalDividas).then(texto => {
+      if (!texto) return
+      localStorage.setItem('ultimo_cumprimento', hoje)
+      setMensagens(prev => [...prev, {
+        id: `cumprimento-${hoje}`,
+        tipo: 'assistente',
+        conteudo: texto,
+        timestamp: new Date(),
+      }])
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // roda só na montagem — valores do dia 0 são suficientes para o cumprimento
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
