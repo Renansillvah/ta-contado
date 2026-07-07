@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Plus, Trash2, Pencil, Briefcase, Wrench, Home, ShoppingCart, TrendingUp, Mic2, Bike, Video, Package, CheckCircle, Clock, SlidersHorizontal, X, Zap, RefreshCw, AlertTriangle, CalendarClock, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Trash2, Pencil, Briefcase, Wrench, Home, ShoppingCart, TrendingUp, Mic2, Bike, Video, Package, CheckCircle, Clock, SlidersHorizontal, X, Zap, RefreshCw, AlertTriangle, CalendarClock, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react'
 import { useApp } from '@/context/AppContext'
 import { format, isToday, isYesterday, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -61,6 +61,13 @@ function agruparPorData(lista: any[]) {
   return grupos
 }
 
+// Detecta se a descrição tem padrão de parcela "(X/Yx)"
+function extrairParcela(desc: string): { base: string; atual: number; total: number } | null {
+  const m = desc.match(/^(.+)\s+\((\d+)\/(\d+)x\)$/)
+  if (!m) return null
+  return { base: m[1], atual: parseInt(m[2]), total: parseInt(m[3]) }
+}
+
 const MES_ATUAL = new Date().toISOString().slice(0, 7)
 
 export default function ReceitasPage() {
@@ -91,7 +98,7 @@ export default function ReceitasPage() {
 
   const receitasSubAba = subAba === 'ganho' ? receitasGanhos : receitasRecebimentos
 
-  // Totais do mês
+  // Totais do mês (ganhos)
   const totalRecebidoMes = useMemo(() =>
     receitasGanhos.filter(r => r.data.startsWith(MES_ATUAL) && r.tipo === 'recebido').reduce((s, r) => s + Number(r.valor), 0),
   [receitasGanhos])
@@ -114,16 +121,79 @@ export default function ReceitasPage() {
 
   const categoriasDaSubAba = CATEGORIAS.filter(c => c.natureza === subAba)
 
+  // ── Grupos de recebimentos parcelados ──────────────────────────────────────
+  // Agrupa receitas com padrão "Descrição (X/Yx)" em grupos por nome+total
+  const { gruposParcelados, idsEmGrupo } = useMemo(() => {
+    if (subAba !== 'recebimento') return { gruposParcelados: [], idsEmGrupo: new Set<string>() }
+
+    const mapa: Record<string, {
+      chave: string
+      base: string
+      total: number
+      parcelas: any[]
+      recebidas: number
+      pendentes: number
+      valorParcela: number
+      proximaData: string | null
+      totalRecebido: number
+      totalGeral: number
+    }> = {}
+
+    receitasRecebimentos.forEach(r => {
+      const parc = extrairParcela(r.descricao)
+      if (!parc) return
+      const chave = `${parc.base}__${parc.total}`
+      if (!mapa[chave]) {
+        mapa[chave] = {
+          chave,
+          base: parc.base,
+          total: parc.total,
+          parcelas: [],
+          recebidas: 0,
+          pendentes: 0,
+          valorParcela: Number(r.valor),
+          proximaData: null,
+          totalRecebido: 0,
+          totalGeral: Number(r.valor) * parc.total,
+        }
+      }
+      mapa[chave].parcelas.push(r)
+      if (r.tipo === 'recebido') {
+        mapa[chave].recebidas++
+        mapa[chave].totalRecebido += Number(r.valor)
+      } else {
+        mapa[chave].pendentes++
+        // Próxima data a receber = menor data pendente
+        if (!mapa[chave].proximaData || r.data < mapa[chave].proximaData!) {
+          mapa[chave].proximaData = r.data
+        }
+      }
+    })
+
+    const grupos = Object.values(mapa).filter(g => g.total > 1)
+    const ids = new Set<string>()
+    grupos.forEach(g => g.parcelas.forEach((p: any) => ids.add(p.id)))
+
+    return { gruposParcelados: grupos, idsEmGrupo: ids }
+  }, [receitasRecebimentos, subAba])
+
+  // Receitas avulsas = não pertencem a nenhum grupo parcelado
+  const receitasAvulsas = useMemo(() => {
+    if (subAba !== 'recebimento') return receitasRecebimentos
+    return receitasRecebimentos.filter(r => !idsEmGrupo.has(r.id))
+  }, [receitasRecebimentos, idsEmGrupo, subAba])
+
+  // Para a aba Ganhos, aplica filtros normalmente
   const receitasFiltradas = useMemo(() => {
+    if (subAba === 'recebimento') return receitasAvulsas // Recebimentos: só avulsos na lista normal
     return receitasSubAba.filter(r => {
       const catOk = filtroCategoria === 'Todas' || r.categoria === filtroCategoria
       const tipoOk = filtroTipo === 'todos' || r.tipo === filtroTipo
       const mesOk = filtroMes === 'todos' || r.data.startsWith(filtroMes)
       return catOk && tipoOk && mesOk
     })
-  }, [receitasSubAba, filtroCategoria, filtroTipo, filtroMes])
+  }, [receitasSubAba, receitasAvulsas, filtroCategoria, filtroTipo, filtroMes, subAba])
 
-  // Pendentes sempre no topo, recebidos agrupados por data
   const pendentes = useMemo(() =>
     receitasFiltradas.filter(r => r.tipo === 'a_receber'),
   [receitasFiltradas])
@@ -140,26 +210,10 @@ export default function ReceitasPage() {
     receitasFiltradas.filter(r => r.tipo === 'recebido').reduce((s, r) => s + Number(r.valor), 0),
   [receitasFiltradas])
 
-  // Grupos de recebimentos parcelados (detecta padrão "Descrição (X/Yx)")
-  const gruposParcelados = useMemo(() => {
-    if (subAba !== 'recebimento') return []
-    const mapa: Record<string, {
-      base: string; total: number; parcelas: any[];
-      recebidas: number; aReceber: number; valorParcela: number
-    }> = {}
-    receitasRecebimentos.forEach(r => {
-      const m = r.descricao.match(/^(.+)\s+\((\d+)\/(\d+)x\)$/)
-      if (!m) return
-      const chave = `${m[1]}__${m[3]}`
-      if (!mapa[chave]) {
-        mapa[chave] = { base: m[1], total: parseInt(m[3]), parcelas: [], recebidas: 0, aReceber: 0, valorParcela: Number(r.valor) }
-      }
-      mapa[chave].parcelas.push(r)
-      if (r.tipo === 'recebido') mapa[chave].recebidas++
-      else mapa[chave].aReceber++
-    })
-    return Object.entries(mapa).filter(([, g]) => g.total > 1)
-  }, [receitasRecebimentos, subAba])
+  // Totais da aba recebimentos
+  const totalParceladosAReceber = useMemo(() =>
+    gruposParcelados.reduce((s, g) => s + g.valorParcela * g.pendentes, 0),
+  [gruposParcelados])
 
   const trocarSubAba = (aba: 'ganho' | 'recebimento') => {
     setSubAba(aba)
@@ -212,8 +266,9 @@ export default function ReceitasPage() {
     return `${meses[parseInt(m) - 1]} ${y}`
   }
 
-  // Frase de contexto
+  // Frase de contexto (só para ganhos)
   const fraseContexto = useMemo(() => {
+    if (subAba !== 'ganho') return null
     if (totalAReceberMes > 0 && totalRecebidoMes > 0) {
       return { txt: `${pctRecebido.toFixed(0)}% recebido — faltam R$ ${totalAReceberMes.toFixed(2).replace('.', ',')} entrar`, cor: '#f97316' }
     }
@@ -224,20 +279,9 @@ export default function ReceitasPage() {
       return { txt: 'Tudo recebido este mês!', cor: 'oklch(0.62 0.18 162)' }
     }
     return null
-  }, [totalRecebidoMes, totalAReceberMes, pctRecebido])
+  }, [totalRecebidoMes, totalAReceberMes, pctRecebido, subAba])
 
-  // Detecta se a descrição tem padrão de parcela "(X/Yx)" gerado pela IA
-  const extrairParcela = (desc: string): { base: string; atual: number; total: number } | null => {
-    const m = desc.match(/^(.+)\s+\((\d+)\/(\d+)x\)$/)
-    if (!m) return null
-    return { base: m[1], atual: parseInt(m[2]), total: parseInt(m[3]) }
-  }
-
-  const renderItem = (r: any) => {
-    const parcela = r.categoria === 'Recebimento' ? extrairParcela(r.descricao) : null
-    const nomeMostrar = parcela ? parcela.base : r.descricao
-
-    return (
+  const renderItem = (r: any) => (
     <div key={r.id}>
       {confirmandoId === r.id ? (
         <div
@@ -249,18 +293,10 @@ export default function ReceitasPage() {
             <p className="text-sm font-medium text-destructive">Apagar "{r.descricao}"?</p>
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={() => setConfirmandoId(null)}
-              className="text-xs px-3 py-1.5 rounded-xl bg-secondary text-foreground font-medium"
-            >
-              Não
-            </button>
-            <button
-              onClick={async () => { await removerReceita(r.id); setConfirmandoId(null) }}
-              className="text-xs px-3 py-1.5 rounded-xl bg-destructive text-white font-semibold"
-            >
-              Apagar
-            </button>
+            <button onClick={() => setConfirmandoId(null)}
+              className="text-xs px-3 py-1.5 rounded-xl bg-secondary text-foreground font-medium">Não</button>
+            <button onClick={async () => { await removerReceita(r.id); setConfirmandoId(null) }}
+              className="text-xs px-3 py-1.5 rounded-xl bg-destructive text-white font-semibold">Apagar</button>
           </div>
         </div>
       ) : (
@@ -274,23 +310,10 @@ export default function ReceitasPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-secondary flex items-center justify-center shrink-0">
-                {parcela
-                  ? <CalendarClock size={16} className="text-sky-400" />
-                  : <CatIcon categoria={r.categoria} size={16} />
-                }
+                <CatIcon categoria={r.categoria} size={16} />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <p className="font-medium text-sm text-foreground leading-tight truncate">{nomeMostrar}</p>
-                  {parcela && (
-                    <span
-                      className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
-                      style={{ background: 'oklch(0.55 0.18 230 / 20%)', color: 'oklch(0.65 0.16 230)' }}
-                    >
-                      {parcela.atual}/{parcela.total}x
-                    </span>
-                  )}
-                </div>
+                <p className="font-medium text-sm text-foreground leading-tight truncate">{r.descricao}</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   {r.categoria} · {format(new Date(r.data + 'T12:00:00'), "d 'de' MMM", { locale: ptBR })}
                 </p>
@@ -302,14 +325,10 @@ export default function ReceitasPage() {
                 <button
                   onClick={() => handleMarcarRecebido(r.id)}
                   disabled={marcandoId === r.id}
-                  title="Marcar como recebido"
                   className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold ml-1 disabled:opacity-50 transition-all active:scale-95"
                   style={{ background: 'oklch(0.62 0.18 162 / 15%)', color: 'oklch(0.62 0.18 162)' }}
                 >
-                  {marcandoId === r.id
-                    ? <Clock size={12} className="animate-spin" />
-                    : <><Zap size={11} /> Recebi!</>
-                  }
+                  {marcandoId === r.id ? <Clock size={12} className="animate-spin" /> : <><Zap size={11} /> Recebi!</>}
                 </button>
               )}
               <button onClick={() => abrirEditar(r)} className="text-muted-foreground hover:text-primary transition-colors p-1">
@@ -323,6 +342,248 @@ export default function ReceitasPage() {
         </div>
       )}
     </div>
+  )
+
+  // ── Card de grupo parcelado ──────────────────────────────────────────────
+  const renderGrupoParcelado = (g: typeof gruposParcelados[0]) => {
+    const pct = g.total > 0 ? Math.min((g.recebidas / g.total) * 100, 100) : 0
+    const expandido = gruposExpandidos[g.chave] ?? false
+
+    return (
+      <div
+        key={g.chave}
+        className="rounded-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-1 duration-300"
+        style={{ border: '1.5px solid oklch(0.55 0.18 230 / 30%)', background: 'var(--card)', boxShadow: '0 1px 8px oklch(0 0 0 / 13%)' }}
+      >
+        {/* Cabeçalho — clicável para expandir */}
+        <button
+          className="w-full px-4 py-3.5 flex items-center gap-3 text-left"
+          onClick={() => toggleGrupo(g.chave)}
+        >
+          {/* Ícone */}
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 relative"
+            style={{ background: 'oklch(0.55 0.18 230 / 15%)' }}
+          >
+            <CalendarClock size={17} style={{ color: 'oklch(0.65 0.16 230)' }} />
+            {g.pendentes > 0 && (
+              <span
+                className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center text-white"
+                style={{ backgroundColor: '#f97316' }}
+              >
+                {g.pendentes}
+              </span>
+            )}
+          </div>
+
+          {/* Info */}
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm text-foreground truncate">{g.base}</p>
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              <span
+                className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                style={{ background: 'oklch(0.55 0.18 230 / 20%)', color: 'oklch(0.65 0.16 230)' }}
+              >
+                {g.recebidas}/{g.total}x
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                R$ {g.valorParcela.toFixed(2).replace('.', ',')}/parcela
+              </span>
+              {g.proximaData && g.pendentes > 0 && (
+                <span className="text-[11px] font-medium" style={{ color: '#f97316' }}>
+                  · próxima {format(new Date(g.proximaData + 'T12:00:00'), "d/MM", { locale: ptBR })}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Valores */}
+          <div className="text-right shrink-0 mr-1">
+            <p className="text-sm font-bold text-primary leading-tight">
+              R$ {g.totalRecebido.toFixed(2).replace('.', ',')}
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              de R$ {g.totalGeral.toFixed(2).replace('.', ',')}
+            </p>
+          </div>
+
+          {expandido
+            ? <ChevronUp size={15} className="text-muted-foreground shrink-0" />
+            : <ChevronDown size={15} className="text-muted-foreground shrink-0" />
+          }
+        </button>
+
+        {/* Barra de progresso */}
+        <div className="px-4 pb-3">
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'oklch(0.25 0.04 240)' }}>
+            <div
+              className="h-full rounded-full transition-all duration-700"
+              style={{
+                width: `${pct}%`,
+                backgroundColor: pct >= 100 ? 'oklch(0.62 0.18 162)' : 'oklch(0.55 0.18 230)',
+              }}
+            />
+          </div>
+          <div className="flex justify-between mt-1">
+            <span className="text-[10px] text-muted-foreground">{pct.toFixed(0)}% recebido</span>
+            {g.pendentes > 0 && (
+              <span className="text-[10px] font-medium" style={{ color: '#f97316' }}>
+                {g.pendentes} parcela{g.pendentes !== 1 ? 's' : ''} pendente{g.pendentes !== 1 ? 's' : ''}
+              </span>
+            )}
+            {g.pendentes === 0 && (
+              <span className="text-[10px] font-medium" style={{ color: 'oklch(0.62 0.18 162)' }}>
+                Tudo recebido!
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Parcelas expandidas */}
+        {expandido && (
+          <div
+            className="border-t"
+            style={{ borderColor: 'oklch(0.55 0.18 230 / 20%)' }}
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-4 pt-3 pb-1.5">
+              Parcelas
+            </p>
+            <div className="px-3 pb-3 space-y-1.5">
+              {g.parcelas
+                .sort((a: any, b: any) => a.data.localeCompare(b.data))
+                .map((p: any) => {
+                  const parc = extrairParcela(p.descricao)
+                  const recebida = p.tipo === 'recebido'
+                  return (
+                    <div
+                      key={p.id}
+                      className="flex items-center gap-3 rounded-xl px-3 py-2.5"
+                      style={{
+                        background: recebida
+                          ? 'oklch(0.48 0.16 162 / 8%)'
+                          : 'oklch(0.55 0.18 230 / 8%)',
+                      }}
+                    >
+                      {/* Número da parcela */}
+                      <div
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+                        style={recebida
+                          ? { background: 'oklch(0.48 0.16 162 / 20%)', color: 'oklch(0.62 0.18 162)' }
+                          : { background: 'oklch(0.55 0.18 230 / 20%)', color: 'oklch(0.65 0.16 230)' }
+                        }
+                      >
+                        {parc?.atual ?? '?'}
+                      </div>
+
+                      {/* Data */}
+                      <p className="text-xs text-muted-foreground flex-1">
+                        {format(new Date(p.data + 'T12:00:00'), "d 'de' MMM yyyy", { locale: ptBR })}
+                      </p>
+
+                      {/* Valor + ação */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs font-bold text-primary">
+                          +R$ {Number(p.valor).toFixed(2).replace('.', ',')}
+                        </span>
+                        {recebida ? (
+                          <CheckCircle size={13} style={{ color: 'oklch(0.62 0.18 162)' }} />
+                        ) : (
+                          <button
+                            onClick={() => handleMarcarRecebido(p.id)}
+                            disabled={marcandoId === p.id}
+                            className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold disabled:opacity-50 transition-all active:scale-95"
+                            style={{ background: 'oklch(0.62 0.18 162 / 15%)', color: 'oklch(0.62 0.18 162)' }}
+                          >
+                            {marcandoId === p.id ? <Clock size={10} className="animate-spin" /> : <><Zap size={9} /> Recebi!</>}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── Conteúdo da sub-aba Recebimentos ────────────────────────────────────
+  const renderRecebimentos = () => {
+    const temGrupos = gruposParcelados.length > 0
+    const temAvulsos = receitasAvulsas.length > 0
+
+    if (!temGrupos && !temAvulsos) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+          <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center mb-4">
+            <RefreshCw size={24} className="text-muted-foreground" />
+          </div>
+          <p className="text-sm font-medium text-foreground/60">Nenhum recebimento ainda</p>
+          <p className="text-xs text-muted-foreground mt-1">Adicione aqui ou pelo Chat</p>
+          <p className="text-[11px] text-muted-foreground mt-3 text-center px-6" style={{ color: 'oklch(0.62 0.18 162)' }}>
+            Dica: diga no Chat "tenho R$ 5.000 para receber em 5x"
+          </p>
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-4">
+        {/* ── Grupos parcelados ── */}
+        {temGrupos && (
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'oklch(0.65 0.16 230)' }}>
+                Parcelados · {gruposParcelados.length}
+              </span>
+              {totalParceladosAReceber > 0 && (
+                <span className="text-[11px] font-semibold" style={{ color: '#f97316' }}>
+                  R$ {totalParceladosAReceber.toFixed(2).replace('.', ',')} a receber
+                </span>
+              )}
+            </div>
+            {gruposParcelados.map(g => renderGrupoParcelado(g))}
+          </div>
+        )}
+
+        {/* ── Avulsos ── */}
+        {temAvulsos && (
+          <div className="space-y-2.5">
+            {temGrupos && (
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                Avulsos
+              </span>
+            )}
+            {/* Pendentes avulsos no topo */}
+            {receitasAvulsas.filter(r => r.tipo === 'a_receber').length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#f97316' }}>
+                    A receber · {receitasAvulsas.filter(r => r.tipo === 'a_receber').length}
+                  </span>
+                  <span className="text-[10px] font-semibold" style={{ color: '#f97316' }}>
+                    R$ {receitasAvulsas.filter(r => r.tipo === 'a_receber').reduce((s, r) => s + Number(r.valor), 0).toFixed(2).replace('.', ',')}
+                  </span>
+                </div>
+                {receitasAvulsas.filter(r => r.tipo === 'a_receber').map(r => renderItem(r))}
+              </div>
+            )}
+            {/* Recebidos avulsos por data */}
+            {agruparPorData(receitasAvulsas.filter(r => r.tipo === 'recebido')).map(grupo => (
+              <div key={grupo.data}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">{grupo.rotulo}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    R$ {grupo.itens.reduce((s, r) => s + Number(r.valor), 0).toFixed(2).replace('.', ',')}
+                  </span>
+                </div>
+                <div className="space-y-2">{grupo.itens.map(r => renderItem(r))}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -357,16 +618,12 @@ export default function ReceitasPage() {
             )}
           </div>
 
-          {/* Barra de progresso do recebimento */}
           {totalEsperadoMes > 0 && (
             <div>
               <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-700"
-                  style={{
-                    width: `${pctRecebido}%`,
-                    backgroundColor: pctRecebido >= 100 ? 'oklch(0.62 0.18 162)' : '#f97316',
-                  }}
+                  style={{ width: `${pctRecebido}%`, backgroundColor: pctRecebido >= 100 ? 'oklch(0.62 0.18 162)' : '#f97316' }}
                 />
               </div>
               <div className="flex justify-between mt-1">
@@ -402,37 +659,55 @@ export default function ReceitasPage() {
             <RefreshCw size={14} className={subAba === 'recebimento' ? 'text-sky-400' : 'text-muted-foreground'} />
             Recebimentos
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${subAba === 'recebimento' ? 'bg-sky-500/15 text-sky-400' : 'bg-muted/50 text-muted-foreground'}`}>
-              {receitasRecebimentos.length}
+              {gruposParcelados.length + receitasAvulsas.length}
             </span>
           </button>
         </div>
       </div>
 
-      {/* ── Botões ação + filtro ── */}
-      <div className="px-4 pb-2 flex gap-2">
-        <button
-          onClick={() => {
-            setShowForm(true)
-            setEditandoId(null)
-            setForm({ ...FORM_VAZIO, categoria: subAba === 'ganho' ? 'Salário' : 'Recebimento', data: new Date().toISOString().split('T')[0] })
-          }}
-          className="flex-1 bg-primary text-primary-foreground rounded-2xl py-3.5 font-semibold flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-transform"
-        >
-          <Plus size={18} strokeWidth={2.5} />
-          {subAba === 'ganho' ? 'Adicionar ganho' : 'Adicionar recebimento'}
-        </button>
-        <button
-          onClick={() => setShowFiltros(v => !v)}
-          className="relative w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-colors"
-          style={{ backgroundColor: showFiltros || filtrosAtivos ? 'oklch(0.62 0.18 162)' : 'oklch(0.25 0.04 240)' }}
-        >
-          <SlidersHorizontal size={17} className={showFiltros || filtrosAtivos ? 'text-white' : 'text-muted-foreground'} />
-          {filtrosAtivos && !showFiltros && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-orange-400" />}
-        </button>
-      </div>
+      {/* ── Botões ação + filtro (só na aba Ganhos) ── */}
+      {subAba === 'ganho' && (
+        <div className="px-4 pb-2 flex gap-2">
+          <button
+            onClick={() => {
+              setShowForm(true)
+              setEditandoId(null)
+              setForm({ ...FORM_VAZIO, categoria: 'Salário', data: new Date().toISOString().split('T')[0] })
+            }}
+            className="flex-1 bg-primary text-primary-foreground rounded-2xl py-3.5 font-semibold flex items-center justify-center gap-2 text-sm active:scale-[0.98] transition-transform"
+          >
+            <Plus size={18} strokeWidth={2.5} /> Adicionar ganho
+          </button>
+          <button
+            onClick={() => setShowFiltros(v => !v)}
+            className="relative w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-colors"
+            style={{ backgroundColor: showFiltros || filtrosAtivos ? 'oklch(0.62 0.18 162)' : 'oklch(0.25 0.04 240)' }}
+          >
+            <SlidersHorizontal size={17} className={showFiltros || filtrosAtivos ? 'text-white' : 'text-muted-foreground'} />
+            {filtrosAtivos && !showFiltros && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-orange-400" />}
+          </button>
+        </div>
+      )}
 
-      {/* ── Filtros ── */}
-      {showFiltros && (
+      {/* Botão de adicionar recebimento avulso */}
+      {subAba === 'recebimento' && (
+        <div className="px-4 pb-2">
+          <button
+            onClick={() => {
+              setShowForm(true)
+              setEditandoId(null)
+              setForm({ ...FORM_VAZIO, categoria: 'Recebimento', tipo: 'a_receber', data: new Date().toISOString().split('T')[0] })
+            }}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl text-sm font-semibold transition-all active:scale-[0.98]"
+            style={{ background: 'oklch(0.55 0.18 230 / 12%)', border: '1.5px dashed oklch(0.55 0.18 230 / 40%)', color: 'oklch(0.65 0.16 230)' }}
+          >
+            <Plus size={16} strokeWidth={2.5} /> Adicionar recebimento avulso
+          </button>
+        </div>
+      )}
+
+      {/* ── Filtros (só Ganhos) ── */}
+      {showFiltros && subAba === 'ganho' && (
         <div className="mx-4 mb-2 bg-card rounded-2xl p-3.5 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 15%)' }}>
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-foreground">Filtros</span>
@@ -485,110 +760,8 @@ export default function ReceitasPage() {
         </div>
       )}
 
-      {/* ── Cards de recebimentos parcelados ── */}
-      {subAba === 'recebimento' && gruposParcelados.length > 0 && (
-        <div className="px-4 pb-2 space-y-2">
-          {gruposParcelados.map(([chave, g]) => {
-            const pct = g.total > 0 ? Math.min((g.recebidas / g.total) * 100, 100) : 0
-            const totalValor = g.valorParcela * g.total
-            const totalRecebido = g.valorParcela * g.recebidas
-            const expandido = gruposExpandidos[chave] ?? false
-            return (
-              <div
-                key={chave}
-                className="rounded-2xl overflow-hidden"
-                style={{ border: '1.5px solid oklch(0.55 0.18 230 / 30%)', background: 'oklch(0.20 0.04 240)' }}
-              >
-                {/* Cabeçalho do grupo */}
-                <button
-                  className="w-full px-4 py-3.5 flex items-center gap-3"
-                  onClick={() => toggleGrupo(chave)}
-                >
-                  <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: 'oklch(0.55 0.18 230 / 15%)' }}
-                  >
-                    <CalendarClock size={16} style={{ color: 'oklch(0.65 0.16 230)' }} />
-                  </div>
-                  <div className="flex-1 text-left min-w-0">
-                    <p className="font-semibold text-sm text-foreground truncate">{g.base}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {g.recebidas}/{g.total} parcelas · R$ {g.valorParcela.toFixed(2).replace('.', ',')}/mês
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0 mr-1">
-                    <p className="text-sm font-bold text-primary">
-                      R$ {totalRecebido.toFixed(2).replace('.', ',')}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">
-                      de R$ {totalValor.toFixed(2).replace('.', ',')}
-                    </p>
-                  </div>
-                  {expandido
-                    ? <ChevronUp size={15} className="text-muted-foreground shrink-0" />
-                    : <ChevronDown size={15} className="text-muted-foreground shrink-0" />
-                  }
-                </button>
-                {/* Barra de progresso */}
-                <div className="px-4 pb-3">
-                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'oklch(0.28 0.05 240)' }}>
-                    <div
-                      className="h-full rounded-full transition-all duration-700"
-                      style={{ width: `${pct}%`, backgroundColor: pct >= 100 ? 'oklch(0.62 0.18 162)' : 'oklch(0.55 0.18 230)' }}
-                    />
-                  </div>
-                  <p className="text-[10px] text-muted-foreground mt-1">{pct.toFixed(0)}% recebido · {g.aReceber} parcela{g.aReceber !== 1 ? 's' : ''} pendente{g.aReceber !== 1 ? 's' : ''}</p>
-                </div>
-                {/* Parcelas individuais (expandido) */}
-                {expandido && (
-                  <div className="border-t px-4 py-3 space-y-2" style={{ borderColor: 'oklch(0.55 0.18 230 / 20%)' }}>
-                    {g.parcelas.sort((a: any, b: any) => a.data.localeCompare(b.data)).map((p: any) => {
-                      const parc = extrairParcela(p.descricao)
-                      return (
-                        <div key={p.id} className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0"
-                              style={p.tipo === 'recebido'
-                                ? { background: 'oklch(0.48 0.16 162 / 20%)', color: 'oklch(0.62 0.18 162)' }
-                                : { background: 'oklch(0.55 0.18 230 / 15%)', color: 'oklch(0.65 0.16 230)' }
-                              }
-                            >
-                              {parc?.atual ?? '?'}
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              {format(new Date(p.data + 'T12:00:00'), "d 'de' MMM", { locale: ptBR })}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-primary">+R$ {Number(p.valor).toFixed(2).replace('.', ',')}</span>
-                            {p.tipo === 'a_receber' && (
-                              <button
-                                onClick={() => handleMarcarRecebido(p.id)}
-                                disabled={marcandoId === p.id}
-                                className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold disabled:opacity-50 transition-all active:scale-95"
-                                style={{ background: 'oklch(0.62 0.18 162 / 15%)', color: 'oklch(0.62 0.18 162)' }}
-                              >
-                                {marcandoId === p.id ? <Clock size={10} className="animate-spin" /> : <><Zap size={9} /> Recebi!</>}
-                              </button>
-                            )}
-                            {p.tipo === 'recebido' && (
-                              <CheckCircle size={13} style={{ color: 'oklch(0.62 0.18 162)' }} />
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* ── Total filtrado visível fora do painel ── */}
-      {filtrosAtivos && receitasFiltradas.length > 0 && (
+      {/* ── Total filtrado ── */}
+      {filtrosAtivos && subAba === 'ganho' && receitasFiltradas.length > 0 && (
         <div className="px-5 pb-2 flex items-center justify-between">
           <span className="text-[11px] text-muted-foreground">
             {receitasFiltradas.length} resultado{receitasFiltradas.length !== 1 ? 's' : ''}
@@ -603,13 +776,15 @@ export default function ReceitasPage() {
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         {loading ? (
           <div className="space-y-2.5">{[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}</div>
+        ) : subAba === 'recebimento' ? (
+          renderRecebimentos()
         ) : receitasFiltradas.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center mb-4">
-              {subAba === 'ganho' ? <TrendingUp size={24} className="text-muted-foreground" /> : <RefreshCw size={24} className="text-muted-foreground" />}
+              <TrendingUp size={24} className="text-muted-foreground" />
             </div>
             <p className="text-sm font-medium text-foreground/60">
-              {filtrosAtivos ? 'Nenhuma receita encontrada' : subAba === 'ganho' ? 'Nenhum ganho ainda' : 'Nenhum recebimento ainda'}
+              {filtrosAtivos ? 'Nenhum ganho encontrado' : 'Nenhum ganho ainda'}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               {filtrosAtivos ? 'Tente outros filtros' : 'Adicione aqui ou pelo Chat'}
@@ -617,8 +792,6 @@ export default function ReceitasPage() {
           </div>
         ) : (
           <div className="space-y-4">
-
-            {/* Pendentes sempre no topo */}
             {pendentes.length > 0 && (
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -629,26 +802,18 @@ export default function ReceitasPage() {
                     R$ {pendentes.reduce((s, r) => s + Number(r.valor), 0).toFixed(2).replace('.', ',')}
                   </span>
                 </div>
-                <div className="space-y-2">
-                  {pendentes.map(r => renderItem(r))}
-                </div>
+                <div className="space-y-2">{pendentes.map(r => renderItem(r))}</div>
               </div>
             )}
-
-            {/* Recebidos agrupados por data */}
             {gruposRecebidos.map(grupo => (
               <div key={grupo.data}>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                    {grupo.rotulo}
-                  </span>
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">{grupo.rotulo}</span>
                   <span className="text-[11px] text-muted-foreground">
                     R$ {grupo.itens.reduce((s, r) => s + Number(r.valor), 0).toFixed(2).replace('.', ',')}
                   </span>
                 </div>
-                <div className="space-y-2">
-                  {grupo.itens.map(r => renderItem(r))}
-                </div>
+                <div className="space-y-2">{grupo.itens.map(r => renderItem(r))}</div>
               </div>
             ))}
           </div>
