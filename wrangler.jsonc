@@ -1,0 +1,13 @@
+{
+  "name": "bb4e13b7-ebdc-4e35-9666-1954fc4aa5bf",
+  "main": "index.js",
+  "compatibility_date": "2024-12-30",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "assets": {
+    "directory": "dist",
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS"
+  }
+}

@@ -554,7 +554,14 @@ function Root() {
   }
 
   if (!user) {
-    return <AuthPage onAutenticado={() => {}} />
+    return (
+      <AuthPage
+        onAutenticado={async () => {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.user) setUser(session.user)
+        }}
+      />
+    )
   }
 
   return (
