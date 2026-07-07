@@ -12,9 +12,9 @@ interface Mensagem {
 }
 
 type IntencaoIA =
-  | { acao: 'gasto'; descricao: string; valor: number; categoria: string }
-  | { acao: 'receita'; descricao: string; valor: number; categoria: string }
-  | { acao: 'divida'; descricao: string; valor: number }
+  | { acao: 'gasto'; descricao: string; valor: number; categoria: string; comentario: string }
+  | { acao: 'receita'; descricao: string; valor: number; categoria: string; comentario: string }
+  | { acao: 'divida'; descricao: string; valor: number; comentario: string }
   | { acao: 'resumo' }
   | { acao: 'conversa'; resposta: string }
   | { acao: 'pedir_valor'; item: string }
@@ -31,7 +31,7 @@ async function processarComIA(
   const hoje = new Date().toLocaleDateString('pt-BR')
   const saldo = totalReceitas - totalGastos
 
-  const systemPrompt = `Você é um assistente financeiro pessoal. Analise a mensagem do usuário e retorne um JSON com a intenção detectada.
+  const systemPrompt = `Você é um assistente financeiro pessoal brasileiro, acolhedor e direto como um amigo que entende de dinheiro. Analise a mensagem do usuário e retorne um JSON com a intenção detectada.
 
 Contexto financeiro atual do usuário:
 - Gastos totais: R$ ${totalGastos.toFixed(2)}
@@ -43,34 +43,49 @@ Contexto financeiro atual do usuário:
 Retorne APENAS um JSON válido com uma das seguintes estruturas:
 
 1. Para registrar um GASTO (compra, pagamento, despesa):
-{"acao":"gasto","descricao":"nome curto do item","valor":número,"categoria":"Alimentação|Transporte|Saúde|Lazer|Compras|Moradia|Educação|Outros"}
+{"acao":"gasto","descricao":"nome curto do item","valor":número,"categoria":"Alimentação|Transporte|Saúde|Lazer|Compras|Moradia|Educação|Outros","comentario":"frase curta e acolhedora, máx 8 palavras"}
 
 2. Para registrar uma RECEITA (recebeu dinheiro, salário, freela):
-{"acao":"receita","descricao":"fonte da receita","valor":número,"categoria":"Salário|Freela / Serviço|Venda|Investimento|Aluguel|Outros"}
+{"acao":"receita","descricao":"fonte da receita","valor":número,"categoria":"Salário|Freela / Serviço|Venda|Investimento|Aluguel|Outros","comentario":"frase celebrando a receita, máx 8 palavras"}
 
 3. Para registrar uma DÍVIDA (deve, empréstimo, cartão, financiamento):
-{"acao":"divida","descricao":"nome da dívida","valor":número}
+{"acao":"divida","descricao":"nome da dívida","valor":número,"comentario":"frase encorajadora, sem julgamento, máx 8 palavras"}
 
-4. Para ver resumo/saldo (palavras como: resumo, saldo, como estou, quanto gastei, total):
+4. Para ver resumo/saldo:
 {"acao":"resumo"}
 
 5. Se menciona algo sem valor:
 {"acao":"pedir_valor","item":"nome do item mencionado"}
 
-6. Para perguntas gerais sobre finanças, dicas, ou qualquer outra conversa:
-{"acao":"conversa","resposta":"sua resposta em português, máximo 2 frases, tom amigável e direto"}
+6. Para perguntas gerais sobre finanças ou conversa:
+{"acao":"conversa","resposta":"sua resposta em português, máximo 2 frases, tom amigável"}
 
-Exemplos:
-"almoço 25" → {"acao":"gasto","descricao":"Almoço","valor":25,"categoria":"Alimentação"}
-"paguei conta de luz 150" → {"acao":"gasto","descricao":"Conta de luz","valor":150,"categoria":"Moradia"}
-"fui no mercado e gastei 200" → {"acao":"gasto","descricao":"Mercado","valor":200,"categoria":"Alimentação"}
-"salário 4500" → {"acao":"receita","descricao":"Salário","valor":4500,"categoria":"Salário"}
-"recebi 800 de freela" → {"acao":"receita","descricao":"Freela","valor":800,"categoria":"Freela / Serviço"}
-"parcela do carro 600" → {"acao":"divida","descricao":"Parcela do carro","valor":600}
-"devo 2000 no cartão" → {"acao":"divida","descricao":"Cartão de crédito","valor":2000}
-"25,90 no lanche" → {"acao":"gasto","descricao":"Lanche","valor":25.90,"categoria":"Alimentação"}
-"como estou esse mês?" → {"acao":"resumo"}
-"comprei roupa" → {"acao":"pedir_valor","item":"roupa"}
+Regras para o campo "comentario":
+- Máximo 8 palavras, tom caloroso e humano
+- VARIE sempre — nunca repita a mesma frase
+- Gastos necessários (mercado, luz, água, saúde): reconheça que faz parte
+- Gastos de lazer (bar, cinema, viagem): celebre sem culpa
+- Gastos altos: normalize sem julgamento
+- Receitas: comemore genuinamente
+- Dívidas: encoraje, nunca julgue
+- NÃO use "Ótimo!", "Perfeito!", "Show!" genéricos
+- Use linguagem brasileira natural: "Anotado!", "Tá registrado", "Aqui entre nós..."
+
+Exemplos de comentarios:
+gasto mercado 200 → "Alimentação em dia, isso é essencial!"
+gasto bar 80 → "Merece um momento de lazer sim!"
+gasto aluguel 1500 → "Teto garantido, isso é prioridade."
+gasto farmácia 45 → "Saúde não tem preço, cuidado certo."
+receita salário 4500 → "Chegou o salário! Bora cuidar bem dele."
+receita freela 800 → "Freela no bolso, esforço valeu!"
+divida cartão 2000 → "Anotei. Um passo de cada vez, vai passar."
+divida empréstimo 5000 → "Registrado. Juntos vamos resolver isso."
+
+Exemplos completos:
+"almoço 25" → {"acao":"gasto","descricao":"Almoço","valor":25,"categoria":"Alimentação","comentario":"Almoço anotado, energia garantida!"}
+"paguei conta de luz 150" → {"acao":"gasto","descricao":"Conta de luz","valor":150,"categoria":"Moradia","comentario":"Conta básica em dia, ótimo!"}
+"recebi 800 de freela" → {"acao":"receita","descricao":"Freela","valor":800,"categoria":"Freela / Serviço","comentario":"Freela no bolso, esforço valeu!"}
+"devo 2000 no cartão" → {"acao":"divida","descricao":"Cartão de crédito","valor":2000,"categoria":"outros","comentario":"Anotei. Um passo de cada vez."}
 
 IMPORTANTE: Retorne SOMENTE o JSON, sem texto adicional, sem markdown.`
 
@@ -86,8 +101,8 @@ IMPORTANTE: Retorne SOMENTE o JSON, sem texto adicional, sem markdown.`
         { role: 'system', content: systemPrompt },
         { role: 'user', content: texto },
       ],
-      max_tokens: 150,
-      temperature: 0.1,
+      max_tokens: 200,
+      temperature: 0.7,
     }),
   })
 
@@ -184,13 +199,13 @@ export default function ChatPage() {
 
       if (intencao.acao === 'gasto') {
         await adicionarGasto({ descricao: intencao.descricao, valor: intencao.valor, categoria: intencao.categoria, data: hoje })
-        resposta = `Gasto de R$ ${fmtValor(intencao.valor)} registrado em ${intencao.categoria}!`
+        resposta = `R$ ${fmtValor(intencao.valor)} em ${intencao.categoria} anotado.\n${intencao.comentario}`
       } else if (intencao.acao === 'receita') {
         await adicionarReceita({ descricao: intencao.descricao, categoria: intencao.categoria, valor: intencao.valor, tipo: 'recebido', data: hoje })
-        resposta = `Receita de R$ ${fmtValor(intencao.valor)} registrada em ${intencao.categoria}!`
+        resposta = `R$ ${fmtValor(intencao.valor)} de ${intencao.descricao} registrado.\n${intencao.comentario}`
       } else if (intencao.acao === 'divida') {
         await adicionarDivida({ nome: intencao.descricao, tipo: 'outros', valor_total: intencao.valor, valor_pago: 0, parcelado: false })
-        resposta = `Dívida de R$ ${fmtValor(intencao.valor)} registrada!`
+        resposta = `R$ ${fmtValor(intencao.valor)} de ${intencao.descricao} anotado.\n${intencao.comentario}`
       } else if (intencao.acao === 'resumo') {
         const saldo = totalReceitas - totalGastos
         resposta = `Seu resumo atual:\n\nGastos: R$ ${fmtValor(totalGastos)}\nReceitas: R$ ${fmtValor(totalReceitas)}\nDívidas: R$ ${fmtValor(totalDividas)}\n\nSaldo: R$ ${fmtValor(saldo)}`
