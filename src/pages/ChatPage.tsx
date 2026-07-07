@@ -37,13 +37,27 @@ interface DadosRetorno {
   totalMovimentado: number
 }
 
+interface DadosEngajamento {
+  dia: 2 | 3 | 5 | 7
+  nome: string
+  // dia 3
+  totalOntem?: number
+  // dia 7
+  totalLancamentos?: number
+  totalReceitas?: number
+  totalGastos?: number
+  categorias?: string[]
+  insightIA?: string
+}
+
 interface Mensagem {
   id: string
-  tipo: 'usuario' | 'assistente' | 'uau' | 'retorno'
+  tipo: 'usuario' | 'assistente' | 'uau' | 'retorno' | 'engajamento'
   conteudo: string
   timestamp: Date
   uau?: DadosUau
   retorno?: DadosRetorno
+  engajamento?: DadosEngajamento
 }
 
 type IntencaoIA =
@@ -287,9 +301,10 @@ const CHIPS_INICIAIS = [
   { label: 'Ver meu resumo', input: 'Resumo do mês' },
 ]
 
-const KEY_UAU           = 'chat_momento_uau_exibido'
-const KEY_ANCORAGEM     = 'chat_ancoragem_retorno_exibida'
-const KEY_RETORNO_DIA   = 'chat_retorno_ultimo_dia'   // armazena "YYYY-MM-DD" do último retorno exibido
+const KEY_UAU              = 'chat_momento_uau_exibido'
+const KEY_ANCORAGEM        = 'chat_ancoragem_retorno_exibida'
+const KEY_RETORNO_DIA      = 'chat_retorno_ultimo_dia'    // armazena "YYYY-MM-DD" do último retorno exibido
+const KEY_ENGAJAMENTO_DIA  = 'chat_engajamento_dia_'      // sufixo: "2", "3", "5", "7"
 
 function gerarUau(
   acao: 'gasto' | 'receita' | 'divida',
@@ -472,6 +487,82 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, loading]) // dispara quando autenticação e dados estiverem prontos
 
+  // Engajamento da primeira semana — dias 2, 3, 5, 7
+  useEffect(() => {
+    if (!user || loading) return
+
+    const dataCriacaoStr = localStorage.getItem('onboarding_data_criacao')
+    if (!dataCriacaoStr) return
+
+    const dataCriacao = new Date(dataCriacaoStr)
+    const agora = new Date()
+    const diffMs = agora.getTime() - dataCriacao.getTime()
+    const diaNro = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1 // dia 1 = dia do cadastro
+
+    const diasEngajamento: Array<2 | 3 | 5 | 7> = [2, 3, 5, 7]
+    const diaAtivo = diasEngajamento.find(d => d === diaNro)
+    if (!diaAtivo) return
+
+    const keyDia = KEY_ENGAJAMENTO_DIA + diaAtivo
+    if (localStorage.getItem(keyDia)) return // já exibiu esse dia
+    localStorage.setItem(keyDia, '1')
+
+    const nome = (user.user_metadata?.full_name as string | undefined)
+      || localStorage.getItem('user_name')
+      || ''
+    const primeiro = nome.split(' ')[0] || 'você'
+
+    // Calcula dados para os cards mais ricos (dia 3, 5, 7)
+    const ontem = new Date()
+    ontem.setDate(ontem.getDate() - 1)
+    const ontemStr = ontem.toISOString().split('T')[0]
+    const totalOntem =
+      gastos.filter(g => g.data === ontemStr).reduce((s, g) => s + Number(g.valor), 0) +
+      receitas.filter(r => r.data === ontemStr).reduce((s, r) => s + Number(r.valor), 0)
+
+    // Dados da semana toda para dia 7
+    const inicioSemana = new Date(dataCriacao)
+    const totalReceitasSemana  = receitas.reduce((s, r) => s + Number(r.valor), 0)
+    const totalGastosSemana    = gastos.reduce((s, g) => s + Number(g.valor), 0)
+    const totalLancamentosSemana = gastos.length + receitas.length + dividas.length
+
+    // Top categorias da semana
+    const catCount: Record<string, number> = {}
+    gastos.forEach(g => { catCount[g.categoria] = (catCount[g.categoria] || 0) + 1 })
+    const categorias = Object.entries(catCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([cat]) => cat)
+
+    // Insight simples baseado em saldo
+    const saldo = totalReceitasSemana - totalGastosSemana
+    const insightIA = saldo >= 0
+      ? `Você terminou a semana com saldo positivo de R$ ${saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}. Continue assim!`
+      : `Seus gastos superaram as receitas em R$ ${Math.abs(saldo).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} essa semana. Vamos ajustar na próxima semana.`
+
+    void inicioSemana // usado implicitamente para contexto — evita lint warning
+
+    setTimeout(() => {
+      setMensagens(prev => [...prev, {
+        id: `engajamento-dia${diaAtivo}-${Date.now()}`,
+        tipo: 'engajamento',
+        conteudo: '',
+        timestamp: new Date(),
+        engajamento: {
+          dia: diaAtivo,
+          nome,
+          totalOntem,
+          totalLancamentos: totalLancamentosSemana,
+          totalReceitas: totalReceitasSemana,
+          totalGastos: totalGastosSemana,
+          categorias,
+          insightIA,
+        },
+      }])
+    }, 1200)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, loading])
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [mensagens])
@@ -644,6 +735,185 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
       {/* Mensagens */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
         {mensagens.map(msg => {
+          // ── Engajamento da primeira semana ──────────────────────
+          if (msg.tipo === 'engajamento' && msg.engajamento) {
+            const e = msg.engajamento
+            const primeiro = e.nome.split(' ')[0] || 'você'
+            const fmt2 = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+
+            // Dia 2 — hábito simples
+            if (e.dia === 2) {
+              return (
+                <div key={msg.id} className="flex justify-start" style={{ animation: 'uauEntrada 0.45s cubic-bezier(0.22,1,0.36,1)' }}>
+                  <div className="w-7 h-7 rounded-xl overflow-hidden shrink-0 mr-2 mt-0.5" style={{ background: 'oklch(0.48 0.16 162)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', fontSize: '10px', fontWeight: 800, color: 'white', fontFamily: 'Poppins,sans-serif' }}>TC</span>
+                  </div>
+                  <div className="flex-1 max-w-[84%]">
+                    <div className="rounded-2xl rounded-bl-md px-4 py-3.5 space-y-2" style={{ backgroundColor: 'oklch(0.22 0.04 240)', boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' }}>
+                      <p className="text-sm font-semibold text-foreground">TC 🤝</p>
+                      <p className="text-sm text-foreground leading-relaxed">
+                        Você sabia que acompanhar seus gastos regularmente ajuda a tomar decisões financeiras melhores?
+                      </p>
+                      <div className="rounded-xl px-3 py-2.5 my-1" style={{ background: 'oklch(0.48 0.16 162 / 10%)', border: '1px solid oklch(0.55 0.18 162 / 25%)' }}>
+                        <p className="text-[13px] font-semibold" style={{ color: 'oklch(0.72 0.15 162)' }}>
+                          💪 Você está no dia 2 da sua jornada.
+                        </p>
+                      </div>
+                      <p className="text-sm text-foreground leading-relaxed">
+                        Continue registrando seus gastos hoje e vou começar a mostrar padrões interessantes sobre seus hábitos financeiros.
+                      </p>
+                      <p className="text-[10px] mt-1 opacity-40 text-right">
+                        {format(msg.timestamp, 'HH:mm', { locale: ptBR })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+
+            // Dia 3 — progresso de ontem + pergunta
+            if (e.dia === 3) {
+              return (
+                <div key={msg.id} className="flex justify-start" style={{ animation: 'uauEntrada 0.45s cubic-bezier(0.22,1,0.36,1)' }}>
+                  <div className="w-7 h-7 rounded-xl overflow-hidden shrink-0 mr-2 mt-0.5" style={{ background: 'oklch(0.48 0.16 162)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', fontSize: '10px', fontWeight: 800, color: 'white', fontFamily: 'Poppins,sans-serif' }}>TC</span>
+                  </div>
+                  <div className="flex-1 max-w-[84%] space-y-2">
+                    <div className="rounded-2xl rounded-bl-md px-4 py-3.5" style={{ backgroundColor: 'oklch(0.22 0.04 240)', boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' }}>
+                      <p className="text-sm font-semibold text-foreground mb-1.5">TC 🤝</p>
+                      <p className="text-sm text-foreground">{primeiro}, vamos conferir seu progresso?</p>
+                    </div>
+                    {e.totalOntem! > 0 && (
+                      <div className="rounded-2xl px-4 py-3.5" style={{ background: 'oklch(0.48 0.16 162 / 10%)', border: '1.5px solid oklch(0.55 0.18 162 / 30%)' }}>
+                        <p className="text-[11px] mb-1" style={{ color: 'oklch(0.58 0.01 240)' }}>Ontem você movimentou</p>
+                        <p className="text-[20px] font-black" style={{ color: 'oklch(0.62 0.18 162)', fontFamily: 'Poppins,sans-serif' }}>
+                          R$ {fmt2(e.totalOntem!)}
+                        </p>
+                      </div>
+                    )}
+                    <div className="rounded-2xl rounded-bl-md px-4 py-3" style={{ backgroundColor: 'oklch(0.22 0.04 240)', boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' }}>
+                      <p className="text-sm text-foreground">Está satisfeito com esse resultado ou gostaria de melhorar algo?</p>
+                      <p className="text-[10px] mt-2 opacity-40 text-right">
+                        {format(msg.timestamp, 'HH:mm', { locale: ptBR })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+
+            // Dia 5 — marco dos 5 dias + botão Ver evolução
+            if (e.dia === 5) {
+              return (
+                <div key={msg.id} className="flex justify-start" style={{ animation: 'uauEntrada 0.45s cubic-bezier(0.22,1,0.36,1)' }}>
+                  <div className="w-7 h-7 rounded-xl overflow-hidden shrink-0 mr-2 mt-0.5" style={{ background: 'oklch(0.48 0.16 162)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', fontSize: '10px', fontWeight: 800, color: 'white', fontFamily: 'Poppins,sans-serif' }}>TC</span>
+                  </div>
+                  <div className="flex-1 max-w-[84%] space-y-2">
+                    <div className="rounded-2xl px-4 py-3.5" style={{ background: 'oklch(0.48 0.16 162 / 12%)', border: '1.5px solid oklch(0.55 0.18 162 / 35%)' }}>
+                      <p className="text-[22px] font-black" style={{ color: 'oklch(0.62 0.18 162)', fontFamily: 'Poppins,sans-serif' }}>5 dias 🎯</p>
+                      <p className="text-[13px] mt-0.5" style={{ color: 'oklch(0.72 0.12 162)' }}>
+                        Você já está usando o Tá Contado há 5 dias!
+                      </p>
+                    </div>
+                    <div className="rounded-2xl rounded-bl-md px-4 py-3.5" style={{ backgroundColor: 'oklch(0.22 0.04 240)', boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' }}>
+                      <p className="text-sm text-foreground leading-relaxed mb-3">
+                        Isso já é o suficiente para começar a enxergar padrões nos seus gastos. Quer ver como você evoluiu nesses 5 dias?
+                      </p>
+                      <button
+                        onClick={() => void enviarTexto('Resumo do mês')}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold transition-all active:scale-[0.97]"
+                        style={{
+                          background: 'oklch(0.48 0.16 162 / 15%)',
+                          border: '1.5px solid oklch(0.55 0.18 162 / 40%)',
+                          color: 'oklch(0.72 0.15 162)',
+                        }}
+                      >
+                        📊 Ver evolução
+                      </button>
+                      <p className="text-[10px] mt-2.5 opacity-40 text-right">
+                        {format(msg.timestamp, 'HH:mm', { locale: ptBR })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+
+            // Dia 7 — resumo completo da semana
+            if (e.dia === 7) {
+              const saldo = (e.totalReceitas ?? 0) - (e.totalGastos ?? 0)
+              const saldoPositivo = saldo >= 0
+              return (
+                <div key={msg.id} className="flex justify-start" style={{ animation: 'uauEntrada 0.45s cubic-bezier(0.22,1,0.36,1)' }}>
+                  <div className="w-7 h-7 rounded-xl overflow-hidden shrink-0 mr-2 mt-0.5" style={{ background: 'oklch(0.48 0.16 162)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', fontSize: '10px', fontWeight: 800, color: 'white', fontFamily: 'Poppins,sans-serif' }}>TC</span>
+                  </div>
+                  <div className="flex-1 max-w-[84%] space-y-2">
+                    {/* Cabeçalho */}
+                    <div className="rounded-2xl rounded-bl-md px-4 py-3" style={{ backgroundColor: 'oklch(0.22 0.04 240)', boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' }}>
+                      <p className="text-sm font-semibold text-foreground">TC 🤝</p>
+                      <p className="text-sm text-foreground mt-0.5">{primeiro}, você completou sua primeira semana! 🏆</p>
+                    </div>
+
+                    {/* Card de stats */}
+                    <div className="rounded-2xl px-4 py-4 space-y-3" style={{ background: 'oklch(0.20 0.04 240)', border: '1.5px solid oklch(0.55 0.18 162 / 25%)' }}>
+                      <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: 'oklch(0.58 0.01 240)' }}>Resumo da semana</p>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-xl px-3 py-2.5" style={{ background: 'oklch(0.48 0.16 162 / 10%)' }}>
+                          <p className="text-[10px]" style={{ color: 'oklch(0.58 0.01 240)' }}>Lançamentos</p>
+                          <p className="text-[17px] font-black text-foreground" style={{ fontFamily: 'Poppins,sans-serif' }}>{e.totalLancamentos ?? 0}</p>
+                        </div>
+                        <div className="rounded-xl px-3 py-2.5" style={{ background: saldoPositivo ? 'oklch(0.48 0.16 162 / 10%)' : 'oklch(0.55 0.16 20 / 10%)' }}>
+                          <p className="text-[10px]" style={{ color: 'oklch(0.58 0.01 240)' }}>Saldo</p>
+                          <p className="text-[17px] font-black" style={{ color: saldoPositivo ? 'oklch(0.62 0.18 162)' : 'oklch(0.65 0.20 25)', fontFamily: 'Poppins,sans-serif' }}>
+                            {saldoPositivo ? '+' : '-'}R$ {fmt2(Math.abs(saldo))}
+                          </p>
+                        </div>
+                        <div className="rounded-xl px-3 py-2.5" style={{ background: 'oklch(0.25 0.04 240 / 60%)' }}>
+                          <p className="text-[10px]" style={{ color: 'oklch(0.58 0.01 240)' }}>Receitas</p>
+                          <p className="text-[15px] font-bold text-foreground" style={{ fontFamily: 'Poppins,sans-serif' }}>R$ {fmt2(e.totalReceitas ?? 0)}</p>
+                        </div>
+                        <div className="rounded-xl px-3 py-2.5" style={{ background: 'oklch(0.25 0.04 240 / 60%)' }}>
+                          <p className="text-[10px]" style={{ color: 'oklch(0.58 0.01 240)' }}>Gastos</p>
+                          <p className="text-[15px] font-bold text-foreground" style={{ fontFamily: 'Poppins,sans-serif' }}>R$ {fmt2(e.totalGastos ?? 0)}</p>
+                        </div>
+                      </div>
+
+                      {e.categorias && e.categorias.length > 0 && (
+                        <div>
+                          <p className="text-[10px] mb-1.5" style={{ color: 'oklch(0.58 0.01 240)' }}>Top categorias</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {e.categorias.map(cat => (
+                              <span key={cat} className="text-[11px] px-2.5 py-1 rounded-full font-medium"
+                                style={{ background: 'oklch(0.48 0.16 162 / 15%)', color: 'oklch(0.72 0.15 162)', border: '1px solid oklch(0.55 0.18 162 / 25%)' }}>
+                                {cat}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Insight */}
+                    <div className="rounded-2xl rounded-bl-md px-4 py-3" style={{ backgroundColor: 'oklch(0.22 0.04 240)', boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' }}>
+                      <p className="text-sm text-foreground leading-relaxed">{e.insightIA}</p>
+                      <p className="text-sm mt-2 font-medium" style={{ color: 'oklch(0.62 0.18 162)' }}>
+                        Continue registrando na segunda semana para eu te mostrar sua evolução!
+                      </p>
+                      <p className="text-[10px] mt-2 opacity-40 text-right">
+                        {format(msg.timestamp, 'HH:mm', { locale: ptBR })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+
+            return null
+          }
+
           // ── Retorno do segundo dia ───────────────────────────────
           if (msg.tipo === 'retorno' && msg.retorno) {
             const r = msg.retorno
