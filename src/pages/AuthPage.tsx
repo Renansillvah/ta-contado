@@ -104,8 +104,10 @@ export default function AuthPage({ onAutenticado }: Props) {
       if (error) {
         if (error.message.includes('already registered') || error.message.includes('User already registered')) {
           setErro('E-mail já cadastrado. Faça login.')
+        } else if (error.message.includes('rate limit') || error.message.includes('over_email')) {
+          setErro('Muitos cadastros em pouco tempo. Aguarde alguns minutos e tente novamente.')
         } else {
-          setErro(`Erro: ${error.message}`)
+          setErro('Erro ao criar conta. Tente novamente.')
         }
         return
       }
