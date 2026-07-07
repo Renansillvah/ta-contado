@@ -476,6 +476,9 @@ function AppContent({ user }: { user: User }) {
   const concluirOnboarding = (input?: string) => {
     localStorage.setItem('onboarding_done', '1')
     if (input) setInputInicial(input)
+    // Atualiza nome caso o usuário tenha informado no onboarding
+    const nomeOnboarding = localStorage.getItem('onboarding_nome') || localStorage.getItem('user_name')
+    if (nomeOnboarding) setNomeUsuario(nomeOnboarding)
     setShowOnboarding(false)
   }
 
