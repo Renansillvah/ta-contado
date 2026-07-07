@@ -1,5 +1,22 @@
 import { useState, useRef, useEffect } from 'react'
 import { Mic, Send, WifiOff } from 'lucide-react'
+
+function AudioBars({ volumes }: { volumes: [number, number, number] }) {
+  return (
+    <div className="flex items-end gap-[3px] h-[17px]">
+      {volumes.map((v, i) => (
+        <div
+          key={i}
+          className="w-[3px] rounded-full transition-none"
+          style={{
+            height: `${Math.max(4, Math.round(v * 17))}px`,
+            backgroundColor: 'oklch(0.62 0.18 162)',
+          }}
+        />
+      ))}
+    </div>
+  )
+}
 import { useApp } from '@/context/AppContext'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -221,11 +238,16 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
   const [mensagens, setMensagens] = useState<Mensagem[]>([MSG_INICIAL])
   const [input, setInput] = useState('')
   const [gravando, setGravando] = useState(false)
+  const [volumes, setVolumes] = useState<[number, number, number]>([0.3, 0.6, 0.3])
   const [offline, setOffline] = useState(!navigator.onLine)
   const [processando, setProcessando] = useState(false)
   const [chipsVisiveis, setChipsVisiveis] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const animFrameRef = useRef<number | null>(null)
 
   useEffect(() => {
     const on = () => setOffline(false)
@@ -340,6 +362,47 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void enviar() }
   }
 
+  const stopAudioAnalyser = () => {
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
+    if (audioCtxRef.current) audioCtxRef.current.close()
+    audioCtxRef.current = null
+    analyserRef.current = null
+    streamRef.current = null
+    animFrameRef.current = null
+    setVolumes([0.3, 0.6, 0.3])
+  }
+
+  const startAudioAnalyser = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
+      const ctx = new AudioContext()
+      audioCtxRef.current = ctx
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 256
+      analyserRef.current = analyser
+      ctx.createMediaStreamSource(stream).connect(analyser)
+
+      const buf = new Uint8Array(analyser.frequencyBinCount)
+      // Offsets para simular 3 bandas de frequência distintas
+      const offsets: [number, number, number] = [2, 8, 18]
+
+      const tick = () => {
+        analyser.getByteFrequencyData(buf)
+        setVolumes(offsets.map(o => {
+          const slice = buf.slice(o, o + 4)
+          const avg = Array.from(slice).reduce((s, v) => s + v, 0) / slice.length
+          return Math.min(1, avg / 180)
+        }) as [number, number, number])
+        animFrameRef.current = requestAnimationFrame(tick)
+      }
+      tick()
+    } catch {
+      // sem permissão de microfone — ignora, barrinhas ficam estáticas
+    }
+  }
+
   const toggleGravacao = () => {
     if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
       alert('Seu navegador não suporta reconhecimento de voz')
@@ -348,8 +411,14 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
     const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition
     const rec = new SpeechRecognition()
     rec.lang = 'pt-BR'
-    rec.onstart = () => setGravando(true)
-    rec.onend = () => setGravando(false)
+    rec.onstart = () => {
+      setGravando(true)
+      void startAudioAnalyser()
+    }
+    rec.onend = () => {
+      setGravando(false)
+      stopAudioAnalyser()
+    }
     rec.onresult = (e: any) => {
       const transcript = e.results[0][0].transcript
       setInput(transcript)
@@ -457,10 +526,10 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
             onClick={toggleGravacao}
             disabled={processando}
             className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-              gravando ? 'bg-destructive text-white' : 'bg-secondary text-muted-foreground hover:text-foreground'
+              gravando ? 'bg-secondary' : 'bg-secondary text-muted-foreground hover:text-foreground'
             } disabled:opacity-50`}
           >
-            <Mic size={17} />
+            {gravando ? <AudioBars volumes={volumes} /> : <Mic size={17} />}
           </button>
           <input
             ref={inputRef}
