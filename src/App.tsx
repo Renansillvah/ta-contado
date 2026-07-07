@@ -11,6 +11,7 @@ import ResumoPage from '@/pages/ResumoPage'
 import AuthPage from '@/pages/AuthPage'
 import OnboardingApp from '@/components/OnboardingApp'
 import SplashScreen from '@/components/SplashScreen'
+import OnboardingNome from '@/components/OnboardingNome'
 import { WhatsAppConnect } from '@/components/WhatsAppConnect'
 import { Toaster } from 'sonner'
 import { toast } from 'sonner'
@@ -536,8 +537,12 @@ function AppContent({ user }: { user: User }) {
 function Root() {
   const [user, setUser] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
+
   const splashVisto = !!localStorage.getItem('splash_visto')
+  const nomeColetado = !!localStorage.getItem('onboarding_nome_coletado')
+
   const [showSplash, setShowSplash] = useState(!splashVisto)
+  const [showNome, setShowNome] = useState(!splashVisto || !nomeColetado)
 
   useEffect(() => {
     // Sessão existente
@@ -559,9 +564,20 @@ function Root() {
     setShowSplash(false)
   }
 
-  // Splash aparece uma única vez, independente de auth
+  const finalizarNome = (nome: string) => {
+    localStorage.setItem('onboarding_nome_coletado', nome)
+    localStorage.setItem('user_name', nome)
+    setShowNome(false)
+  }
+
+  // 1. Splash — aparece uma única vez
   if (showSplash) {
     return <SplashScreen onFinalizar={finalizarSplash} />
+  }
+
+  // 2. Coleta de nome — aparece após a splash, antes do auth
+  if (showNome) {
+    return <OnboardingNome onContinuar={finalizarNome} />
   }
 
   if (authLoading) {
