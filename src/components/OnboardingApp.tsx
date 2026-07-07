@@ -1,27 +1,20 @@
 import { useState, useRef, useEffect } from 'react'
-import { ChevronRight, CheckCircle2, DollarSign, Sparkles } from 'lucide-react'
+import { ChevronRight, CheckCircle2, DollarSign, Sparkles, Zap } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { gerarBoasVindasIA } from '@/lib/openai'
 
 interface Props {
   nomeUsuario: string
-  onConcluir: () => void
+  onConcluir: (inputInicial?: string) => void
 }
 
 type Objetivo = 'organizar' | 'dividas' | 'economizar' | 'investir'
-type Controle = 'gastos' | 'receitas' | 'tudo'
 
 const OBJETIVOS: { value: Objetivo; emoji: string; label: string; desc: string }[] = [
   { value: 'organizar', emoji: '📋', label: 'Organizar gastos', desc: 'Saber para onde vai meu dinheiro' },
   { value: 'dividas', emoji: '💳', label: 'Sair das dívidas', desc: 'Quitar o que devo e respirar aliviado' },
   { value: 'economizar', emoji: '🎯', label: 'Economizar', desc: 'Juntar dinheiro todo mês' },
   { value: 'investir', emoji: '📈', label: 'Começar a investir', desc: 'Fazer o dinheiro trabalhar por mim' },
-]
-
-const CONTROLES: { value: Controle; emoji: string; label: string }[] = [
-  { value: 'tudo', emoji: '🔄', label: 'Gastos e receitas' },
-  { value: 'gastos', emoji: '💸', label: 'Só os gastos' },
-  { value: 'receitas', emoji: '💰', label: 'Só as receitas' },
 ]
 
 const FAIXAS_RENDA = [
@@ -38,22 +31,27 @@ const FRASES_LOADING = [
   'Quase pronto...',
 ]
 
+const ACOES_RAPIDAS = [
+  { label: 'Registrar um gasto', input: 'Almoço ' },
+  { label: 'Tenho uma dívida', input: 'Devo ' },
+  { label: 'Recebi dinheiro', input: 'Recebi ' },
+]
+
 export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
   const [passo, setPasso] = useState(1)
   const [objetivo, setObjetivo] = useState<Objetivo | null>(null)
   const [renda, setRenda] = useState<number | null>(null)
-  const [controle, setControle] = useState<Controle | null>(null)
   const inputRendaRef = useRef<HTMLInputElement>(null)
   const [rendaCustom, setRendaCustom] = useState('')
   const [usandoCustom, setUsandoCustom] = useState(false)
   const [gerando, setGerando] = useState(false)
   const [fraseIdx, setFraseIdx] = useState(0)
   const [iaGerada, setIaGerada] = useState(false)
+  const [saindo, setSaindo] = useState(false)
 
   const primeiro = nomeUsuario.split(' ')[0]
-  const totalPassos = 4
+  const totalPassos = 3
 
-  // Rotaciona frases de loading
   useEffect(() => {
     if (!gerando) return
     const id = setInterval(() => {
@@ -62,9 +60,9 @@ export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
     return () => clearInterval(id)
   }, [gerando])
 
-  // Quando chega ao passo 4, dispara a geração de IA em background
+  // Quando chega ao passo 3, dispara a geração de IA em background
   useEffect(() => {
-    if (passo !== 4 || iaGerada) return
+    if (passo !== 3 || iaGerada) return
 
     const rendaFinal = usandoCustom ? (parseFloat(rendaCustom.replace(',', '.')) || 0) : (renda ?? 0)
 
@@ -73,55 +71,50 @@ export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
       nome: primeiro,
       objetivo: objetivo ?? '',
       renda: rendaFinal,
-      controle: controle ?? '',
+      controle: 'tudo',
     })
       .then(msg => {
-        if (msg) {
-          localStorage.setItem('onboarding_msg_ia', msg)
-        }
+        if (msg) localStorage.setItem('onboarding_msg_ia', msg)
       })
-      .catch(() => {
-        // silencia — fallback para mensagem estática no ChatPage
-      })
+      .catch(() => {})
       .finally(() => {
         setGerando(false)
         setIaGerada(true)
       })
   }, [passo]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const concluir = async (inputInicial?: string) => {
+    setSaindo(true)
+    const rendaFinal = usandoCustom ? (parseFloat(rendaCustom.replace(',', '.')) || 0) : (renda ?? 0)
+    try {
+      await supabase.auth.updateUser({
+        data: { onboarding_done: true, objetivo, controle: 'tudo', renda_mensal: rendaFinal },
+      })
+    } catch {}
+    localStorage.setItem('onboarding_renda', String(rendaFinal))
+    localStorage.setItem('onboarding_objetivo', objetivo ?? '')
+    localStorage.setItem('onboarding_controle', 'tudo')
+    setTimeout(() => onConcluir(inputInicial), 300)
+  }
+
   const avancar = async () => {
     if (passo < totalPassos) {
       setPasso(p => p + 1)
       return
     }
-    // Passo final — salvar preferências e concluir
-    const rendaFinal = usandoCustom ? (parseFloat(rendaCustom.replace(',', '.')) || 0) : (renda ?? 0)
-    try {
-      await supabase.auth.updateUser({
-        data: {
-          onboarding_done: true,
-          objetivo,
-          controle,
-          renda_mensal: rendaFinal,
-        },
-      })
-    } catch {
-      // silencia erro de metadata
-    }
-    localStorage.setItem('onboarding_renda', String(rendaFinal))
-    localStorage.setItem('onboarding_objetivo', objetivo ?? '')
-    localStorage.setItem('onboarding_controle', controle ?? '')
-    onConcluir()
+    await concluir()
   }
 
   const podeAvancar =
     (passo === 1 && objetivo !== null) ||
     (passo === 2 && (renda !== null || (usandoCustom && rendaCustom.trim() !== ''))) ||
-    (passo === 3 && controle !== null) ||
-    passo === 4
+    passo === 3
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col max-w-lg mx-auto bg-background">
+    <div
+      className="fixed inset-0 z-50 flex flex-col max-w-lg mx-auto bg-background transition-opacity duration-300"
+      style={{ opacity: saindo ? 0 : 1 }}
+    >
       {/* Barra de progresso */}
       <div className="px-6 pt-6 pb-0">
         <div className="flex items-center gap-1.5 mb-6">
@@ -129,9 +122,7 @@ export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
             <div
               key={i}
               className="h-1 flex-1 rounded-full transition-all duration-400"
-              style={{
-                background: i < passo ? 'oklch(0.55 0.18 162)' : 'oklch(0.25 0.04 240)',
-              }}
+              style={{ background: i < passo ? 'oklch(0.55 0.18 162)' : 'oklch(0.25 0.04 240)' }}
             />
           ))}
         </div>
@@ -209,7 +200,6 @@ export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
                   )}
                 </button>
               ))}
-              {/* Campo personalizado */}
               <button
                 onClick={() => { setUsandoCustom(true); setRenda(null); setTimeout(() => inputRendaRef.current?.focus(), 50) }}
                 className="w-full flex items-center gap-4 rounded-2xl p-4 text-left transition-all active:scale-[0.98]"
@@ -239,39 +229,8 @@ export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
           </div>
         )}
 
-        {/* PASSO 3 — O que controlar */}
+        {/* PASSO 3 — Pronto + IA gerando + ações rápidas */}
         {passo === 3 && (
-          <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-            <h2 className="text-2xl font-black text-foreground mb-1">Como vai usar?</h2>
-            <p className="text-muted-foreground text-[15px] mb-6 leading-relaxed">
-              O que você quer controlar primeiro?
-            </p>
-            <div className="space-y-2.5">
-              {CONTROLES.map(c => (
-                <button
-                  key={c.value}
-                  onClick={() => setControle(c.value)}
-                  className="w-full flex items-center gap-4 rounded-2xl p-4 text-left transition-all active:scale-[0.98]"
-                  style={{
-                    background: controle === c.value ? 'oklch(0.48 0.16 162 / 15%)' : 'oklch(0.19 0.04 240)',
-                    border: controle === c.value
-                      ? '2px solid oklch(0.55 0.18 162 / 60%)'
-                      : '2px solid oklch(1 0 0 / 6%)',
-                  }}
-                >
-                  <span className="text-2xl shrink-0">{c.emoji}</span>
-                  <p className="flex-1 font-semibold text-[14px] text-foreground">{c.label}</p>
-                  {controle === c.value && (
-                    <CheckCircle2 size={18} className="text-primary shrink-0" />
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* PASSO 4 — Pronto + IA gerando */}
-        {passo === 4 && (
           <div className="animate-in fade-in zoom-in-95 duration-400 flex flex-col items-center text-center py-8">
             <div
               className="w-20 h-20 rounded-3xl flex items-center justify-center mb-6 shadow-xl relative"
@@ -297,7 +256,7 @@ export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
 
             {gerando ? (
               <div className="flex flex-col items-center gap-3 mt-2">
-                <p className="text-muted-foreground text-[15px] leading-relaxed max-w-xs animate-in fade-in duration-300 key={fraseIdx}">
+                <p className="text-muted-foreground text-[15px] leading-relaxed max-w-xs">
                   {FRASES_LOADING[fraseIdx]}
                 </p>
                 <div className="flex gap-1.5 mt-1">
@@ -315,56 +274,69 @@ export default function OnboardingApp({ nomeUsuario, onConcluir }: Props) {
               </div>
             ) : (
               <p className="text-muted-foreground text-[15px] leading-relaxed max-w-xs">
-                Seu plano financeiro personalizado está pronto. Vamos começar?
+                Seu plano financeiro personalizado está pronto. Por onde quer começar?
               </p>
             )}
 
-            {/* Card de destaque — aparece após IA gerar */}
+            {/* Ações rápidas — aparecem após IA gerar */}
             {!gerando && (
-              <div
-                className="mt-8 w-full rounded-2xl p-4 text-left animate-in fade-in slide-in-from-bottom-2 duration-500"
-                style={{ background: 'oklch(0.48 0.16 162 / 12%)', border: '1px solid oklch(0.55 0.18 162 / 25%)' }}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <Sparkles size={13} className="text-primary" />
-                  <p className="text-xs font-bold text-primary uppercase tracking-wider">Seu assessor financeiro está pronto</p>
-                </div>
-                <p className="text-[13px] text-foreground leading-relaxed">
-                  Abra o <strong className="text-primary">Chat</strong> para ver sua análise personalizada e começar a registrar.
+              <div className="mt-8 w-full animate-in fade-in slide-in-from-bottom-2 duration-500">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3 text-left">
+                  Primeiro passo rápido
                 </p>
+                <div className="flex flex-col gap-2">
+                  {ACOES_RAPIDAS.map(acao => (
+                    <button
+                      key={acao.label}
+                      onClick={() => concluir(acao.input)}
+                      className="w-full flex items-center gap-3 rounded-2xl px-4 py-3.5 text-left transition-all active:scale-[0.98]"
+                      style={{
+                        background: 'oklch(0.48 0.16 162 / 10%)',
+                        border: '1.5px solid oklch(0.55 0.18 162 / 30%)',
+                      }}
+                    >
+                      <Zap size={15} className="text-primary shrink-0" />
+                      <span className="text-[14px] font-semibold text-foreground">{acao.label}</span>
+                      <ChevronRight size={15} className="text-muted-foreground ml-auto shrink-0" />
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
-            {/* Dica de uso */}
+            {/* Card assessor */}
             {!gerando && (
               <div
-                className="mt-3 w-full rounded-2xl p-4 text-left animate-in fade-in duration-700"
+                className="mt-4 w-full rounded-2xl p-4 text-left animate-in fade-in duration-700"
                 style={{ background: 'oklch(0.19 0.04 240)', border: '1px solid oklch(1 0 0 / 8%)' }}
               >
-                <p className="text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wider">Exemplos de registro</p>
-                <div className="space-y-1">
-                  {['"Almoço 25 reais"', '"Recebi 3000 de freela"', '"Devo 500 no Nubank"'].map(ex => (
-                    <p key={ex} className="text-xs text-muted-foreground font-mono">{ex}</p>
-                  ))}
+                <div className="flex items-center gap-2 mb-1">
+                  <Sparkles size={13} className="text-primary" />
+                  <p className="text-xs font-bold text-primary uppercase tracking-wider">Seu assessor financeiro está pronto</p>
                 </div>
+                <p className="text-[13px] text-muted-foreground leading-relaxed">
+                  Abra o <strong className="text-foreground">Chat</strong> para ver sua análise e começar a registrar no seu ritmo.
+                </p>
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* Botão avançar */}
-      <div className="px-6 pb-10 pt-4 shrink-0">
-        <button
-          onClick={avancar}
-          disabled={!podeAvancar}
-          className="w-full py-4 rounded-2xl font-bold text-[15px] text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-40"
-          style={{ backgroundColor: 'oklch(0.55 0.18 162)' }}
-        >
-          {passo === totalPassos ? 'Entrar no app' : 'Continuar'}
-          {passo < totalPassos && <ChevronRight size={18} />}
-        </button>
-      </div>
+      {/* Botão avançar — só aparece nos passos 1 e 2, e no passo 3 se ainda carregando */}
+      {(passo < totalPassos || gerando) && (
+        <div className="px-6 pb-10 pt-4 shrink-0">
+          <button
+            onClick={avancar}
+            disabled={!podeAvancar}
+            className="w-full py-4 rounded-2xl font-bold text-[15px] text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-40"
+            style={{ backgroundColor: 'oklch(0.55 0.18 162)' }}
+          >
+            {passo === totalPassos ? 'Entrar no app' : 'Continuar'}
+            {passo < totalPassos && <ChevronRight size={18} />}
+          </button>
+        </div>
+      )}
 
       <style>{`
         @keyframes bounce {

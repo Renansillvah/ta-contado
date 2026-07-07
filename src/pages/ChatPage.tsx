@@ -205,13 +205,27 @@ Gere uma mensagem de boas-vindas para o primeiro acesso do dia. Regras:
   return data.choices?.[0]?.message?.content?.trim() ?? ''
 }
 
-export default function ChatPage() {
+const CHIPS_INICIAIS = [
+  { label: 'Almoço hoje', input: 'Almoço ' },
+  { label: 'Recebi dinheiro', input: 'Recebi ' },
+  { label: 'Tenho uma dívida', input: 'Devo ' },
+  { label: 'Ver meu resumo', input: 'Resumo do mês' },
+]
+
+interface ChatPageProps {
+  inputInicial?: string
+  onInputInicialUsado?: () => void
+}
+
+export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPageProps) {
   const [mensagens, setMensagens] = useState<Mensagem[]>([MSG_INICIAL])
   const [input, setInput] = useState('')
   const [gravando, setGravando] = useState(false)
   const [offline, setOffline] = useState(!navigator.onLine)
   const [processando, setProcessando] = useState(false)
+  const [chipsVisiveis, setChipsVisiveis] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const on = () => setOffline(false)
@@ -222,6 +236,15 @@ export default function ChatPage() {
   }, [])
 
   const { adicionarGasto, adicionarReceita, adicionarDivida, totalGastos, totalReceitas, totalDividas, user } = useApp()
+
+  // Preenche input vindo do onboarding
+  useEffect(() => {
+    if (!inputInicial) return
+    setInput(inputInicial)
+    setChipsVisiveis(false)
+    onInputInicialUsado?.()
+    setTimeout(() => inputRef.current?.focus(), 100)
+  }, [inputInicial]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cumprimento diário — dispara uma vez por dia, aguarda o user carregar
   useEffect(() => {
@@ -252,22 +275,21 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [mensagens])
 
-  const enviar = async () => {
-    const texto = input.trim()
-    if (!texto || processando) return
+  const enviarTexto = async (texto: string) => {
+    if (!texto.trim() || processando) return
 
     const msgUsuario: Mensagem = {
       id: Date.now().toString(),
       tipo: 'usuario',
-      conteudo: texto,
+      conteudo: texto.trim(),
       timestamp: new Date(),
     }
     setMensagens(prev => [...prev, msgUsuario])
-    setInput('')
+    setChipsVisiveis(false)
     setProcessando(true)
 
     try {
-      const intencao = await processarComIA(texto, totalGastos, totalReceitas, totalDividas)
+      const intencao = await processarComIA(texto.trim(), totalGastos, totalReceitas, totalDividas)
       const hoje = new Date().toISOString().split('T')[0]
       let resposta = ''
 
@@ -305,6 +327,13 @@ export default function ChatPage() {
     } finally {
       setProcessando(false)
     }
+  }
+
+  const enviar = async () => {
+    const texto = input.trim()
+    if (!texto) return
+    setInput('')
+    await enviarTexto(texto)
   }
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -393,6 +422,34 @@ export default function ChatPage() {
         <div ref={bottomRef} />
       </div>
 
+      {/* Chips de sugestão — visíveis só no início */}
+      {chipsVisiveis && mensagens.length <= 2 && (
+        <div className="px-4 pb-2 flex gap-2 flex-wrap animate-in fade-in duration-500">
+          {CHIPS_INICIAIS.map(chip => (
+            <button
+              key={chip.label}
+              onClick={() => {
+                setChipsVisiveis(false)
+                if (chip.input === 'Resumo do mês') {
+                  void enviarTexto('Resumo do mês')
+                } else {
+                  setInput(chip.input)
+                  inputRef.current?.focus()
+                }
+              }}
+              className="text-xs px-3 py-1.5 rounded-full font-medium transition-all active:scale-95"
+              style={{
+                background: 'oklch(0.22 0.04 240)',
+                border: '1px solid oklch(0.55 0.18 162 / 40%)',
+                color: 'oklch(0.75 0.10 162)',
+              }}
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Input area */}
       <div className="px-4 py-3 border-t" style={{ borderColor: 'oklch(1 0 0 / 8%)' }}>
         <div className="flex items-center gap-2">
@@ -406,6 +463,7 @@ export default function ChatPage() {
             <Mic size={17} />
           </button>
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}

@@ -471,9 +471,11 @@ function AppContent({ user }: { user: User }) {
   // Onboarding feito?
   const onboardingDone = !!user.user_metadata?.onboarding_done || !!localStorage.getItem('onboarding_done')
   const [showOnboarding, setShowOnboarding] = useState(!onboardingDone)
+  const [inputInicial, setInputInicial] = useState('')
 
-  const concluirOnboarding = () => {
+  const concluirOnboarding = (input?: string) => {
     localStorage.setItem('onboarding_done', '1')
+    if (input) setInputInicial(input)
     setShowOnboarding(false)
   }
 
@@ -516,7 +518,7 @@ function AppContent({ user }: { user: User }) {
         ))}
       </div>
       <div className="flex-1 overflow-hidden">
-        {tab === 'chat' && <ChatPage />}
+        {tab === 'chat' && <ChatPage inputInicial={inputInicial} onInputInicialUsado={() => setInputInicial('')} />}
         {tab === 'gastos' && <GastosPage />}
         {tab === 'dividas' && <DividasPage />}
         {tab === 'receitas' && <ReceitasPage />}
