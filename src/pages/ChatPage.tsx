@@ -238,12 +238,8 @@ function gerarMsgInicial(): string {
   return `${saudacao}\n\nEstou aqui para te ajudar a controlar suas finanças.\n\nMe conta um gasto, receita ou dívida — pode escrever do jeito que quiser.\n\n"Almoço 25 reais"\n"Recebi 3000 de freela"\n"Devo 500 no Nubank"`
 }
 
-const MSG_INICIAL: Mensagem = {
-  id: '0',
-  tipo: 'assistente',
-  conteudo: gerarMsgInicial(),
-  timestamp: new Date(),
-}
+// MSG_INICIAL é criada uma vez por montagem do componente (dentro do useState)
+// — não pode ser uma constante de módulo pois executaria antes da hidratação do localStorage
 
 async function gerarCumprimentoDiario(
   nome: string,
@@ -364,7 +360,12 @@ interface ChatPageProps {
 }
 
 export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPageProps) {
-  const [mensagens, setMensagens] = useState<Mensagem[]>([MSG_INICIAL])
+  const [mensagens, setMensagens] = useState<Mensagem[]>(() => [{
+    id: '0',
+    tipo: 'assistente',
+    conteudo: gerarMsgInicial(),
+    timestamp: new Date(),
+  }])
   const [input, setInput] = useState('')
   const [gravando, setGravando] = useState(false)
   const [volumes, setVolumes] = useState<[number, number, number]>([0.3, 0.6, 0.3])
@@ -392,7 +393,7 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
     if (localStorage.getItem(KEY_ANCORAGEM)) return
     localStorage.setItem(KEY_ANCORAGEM, '1')
     const primeiro = nome.split(' ')[0] || 'você'
-    const texto = `TC 🤝\n\n${primeiro}, você deu o primeiro passo hoje! 🎯\n\nA partir de agora vou ajudar você a entender melhor sua vida financeira.\n\nQuando voltar amanhã, vou mostrar um resumo do que foi registrado hoje e ajudar você a tomar decisões melhores.\n\nAté amanhã! 👋`
+    const texto = `TC 🤝\n\n${primeiro}, você deu o primeiro passo! 🎯\n\nContinue registrando seus gastos e receitas do dia — quanto mais você lançar, mais insights vou conseguir te mostrar.\n\nPode continuar à vontade. Estou aqui! 💪`
     setTimeout(() => {
       setMensagens(prev => [...prev, {
         id: `ancoragem-${Date.now()}`,
@@ -412,13 +413,21 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
     setTimeout(() => inputRef.current?.focus(), 100)
   }, [inputInicial]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cumprimento diário — dispara uma vez por dia, aguarda o user carregar
+  // Cumprimento diário — dispara uma vez por dia, mas NÃO no dia do onboarding
   useEffect(() => {
     if (!user) return // aguarda autenticação
 
     const hoje = new Date().toISOString().split('T')[0]
     const ultimoCumprimento = localStorage.getItem('ultimo_cumprimento')
     if (ultimoCumprimento === hoje) return
+
+    // Não exibe no mesmo dia em que o onboarding foi concluído
+    const dataCriacao = localStorage.getItem('onboarding_data_criacao')
+    if (dataCriacao && dataCriacao.split('T')[0] === hoje) return
+
+    // Só exibe se o usuário já fez onboarding em algum dia anterior
+    const onboardingFeito = !!localStorage.getItem('onboarding_concluido')
+    if (!onboardingFeito) return
 
     const nome = (user.user_metadata?.full_name as string | undefined)
       || localStorage.getItem('user_name')
