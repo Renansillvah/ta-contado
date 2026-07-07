@@ -96,18 +96,43 @@ export default function AuthPage({ onAutenticado }: Props) {
     if (senha !== confirmarSenha) { setErro('As senhas não coincidem'); return }
     setLoading(true)
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password: senha,
         options: { data: { full_name: nome.trim() } },
       })
       if (error) {
-        if (error.message.includes('already registered')) setErro('E-mail já cadastrado. Faça login.')
-        else setErro('Erro ao criar conta. Tente novamente.')
+        if (error.message.includes('already registered') || error.message.includes('User already registered')) {
+          setErro('E-mail já cadastrado. Faça login.')
+        } else {
+          setErro(`Erro: ${error.message}`)
+        }
         return
       }
-      // Confirmação de e-mail desabilitada → entra direto
+      // Se tem sessão ativa → confirmação de e-mail desabilitada → entra direto
+      if (data.session) {
+        onAutenticado()
+        return
+      }
+      // Se criou usuário mas não tem sessão → confirmação de e-mail está habilitada
+      if (data.user && !data.session) {
+        // Tenta logar direto (alguns projetos retornam user sem session mas permitem login)
+        const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+          email,
+          password: senha,
+        })
+        if (!loginError && loginData.session) {
+          onAutenticado()
+          return
+        }
+        // Confirmação de e-mail obrigatória
+        irPara('check-email')
+        return
+      }
+      // Fallback
       onAutenticado()
+    } catch (err) {
+      setErro('Erro inesperado. Tente novamente.')
     } finally {
       setLoading(false)
     }
