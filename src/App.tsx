@@ -13,6 +13,7 @@ import OnboardingApp from '@/components/OnboardingApp'
 import SplashScreen from '@/components/SplashScreen'
 import OnboardingNome from '@/components/OnboardingNome'
 import OnboardingDesafio, { type Desafio } from '@/components/OnboardingDesafio'
+import OnboardingComplementar from '@/components/OnboardingComplementar'
 import { WhatsAppConnect } from '@/components/WhatsAppConnect'
 import { Toaster } from 'sonner'
 import { toast } from 'sonner'
@@ -539,15 +540,21 @@ function Root() {
   const [user, setUser] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
 
-  const splashVisto = !!localStorage.getItem('splash_visto')
-  const nomeColetado = !!localStorage.getItem('onboarding_nome_coletado')
-  const desafioColetado = !!localStorage.getItem('onboarding_desafio')
+  const splashVisto       = !!localStorage.getItem('splash_visto')
+  const nomeColetado      = !!localStorage.getItem('onboarding_nome_coletado')
+  const desafioColetado   = !!localStorage.getItem('onboarding_desafio')
+  const complColetado     = !!localStorage.getItem('onboarding_resposta_compl')
 
-  const [showSplash, setShowSplash] = useState(!splashVisto)
-  const [showNome, setShowNome] = useState(!splashVisto || !nomeColetado)
-  const [showDesafio, setShowDesafio] = useState(!splashVisto || !nomeColetado || !desafioColetado)
-  const [nomeOnboarding, setNomeOnboarding] = useState(
-    localStorage.getItem('onboarding_nome_coletado') ?? ''
+  const passouTudo = splashVisto && nomeColetado && desafioColetado && complColetado
+
+  const [showSplash,       setShowSplash]       = useState(!splashVisto)
+  const [showNome,         setShowNome]         = useState(!splashVisto || !nomeColetado)
+  const [showDesafio,      setShowDesafio]      = useState(!passouTudo && !desafioColetado)
+  const [showComplementar, setShowComplementar] = useState(!passouTudo && desafioColetado && !complColetado)
+
+  const [nomeOnboarding,   setNomeOnboarding]   = useState(localStorage.getItem('onboarding_nome_coletado') ?? '')
+  const [desafioOnboarding, setDesafioOnboarding] = useState<Desafio | null>(
+    (localStorage.getItem('onboarding_desafio') as Desafio) ?? null
   )
 
   useEffect(() => {
@@ -579,11 +586,23 @@ function Root() {
 
   const finalizarDesafio = (desafio: Desafio) => {
     localStorage.setItem('onboarding_desafio', desafio)
+    setDesafioOnboarding(desafio)
     setShowDesafio(false)
+    setShowComplementar(true)
+  }
+
+  const finalizarComplementar = (resposta: string) => {
+    localStorage.setItem('onboarding_resposta_compl', resposta)
+    setShowComplementar(false)
   }
 
   const voltarParaNome = () => {
     setShowNome(true)
+  }
+
+  const voltarParaDesafio = () => {
+    setShowDesafio(true)
+    setShowComplementar(false)
   }
 
   // 1. Splash — aparece uma única vez
@@ -603,6 +622,18 @@ function Root() {
         nome={nomeOnboarding}
         onContinuar={finalizarDesafio}
         onVoltar={voltarParaNome}
+      />
+    )
+  }
+
+  // 4. Pergunta complementar
+  if (showComplementar && desafioOnboarding) {
+    return (
+      <OnboardingComplementar
+        nome={nomeOnboarding}
+        desafio={desafioOnboarding}
+        onContinuar={finalizarComplementar}
+        onVoltar={voltarParaDesafio}
       />
     )
   }
