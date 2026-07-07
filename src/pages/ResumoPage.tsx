@@ -1,10 +1,10 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useApp } from '@/context/AppContext'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
-import { format, subMonths, startOfMonth } from 'date-fns'
+import { format, subMonths, startOfMonth, startOfWeek, endOfWeek } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Skeleton } from '@/components/ui/skeleton'
-import { TrendingUp, TrendingDown, CreditCard, AlertTriangle, CheckCircle2, AlertCircle, Wallet, ArrowDownCircle, Target, Lightbulb, MessageSquare } from 'lucide-react'
+import { TrendingUp, TrendingDown, CreditCard, AlertTriangle, CheckCircle2, AlertCircle, Wallet, ArrowDownCircle, Target, Lightbulb, MessageSquare, Calendar, Star, Zap } from 'lucide-react'
 
 function formatBRL(v: number) {
   return `R$ ${v.toFixed(2).replace('.', ',')}`
@@ -157,7 +157,384 @@ function PlanoInicial() {
   )
 }
 
+function ResumoSemanal() {
+  const { gastos, receitas, dividas, loading } = useApp()
+
+  // ── Intervalo da semana atual (segunda a domingo) ────────────────────────────
+  const hoje = new Date()
+  const inicioSemana = startOfWeek(hoje, { weekStartsOn: 1 }) // segunda
+  const fimSemana    = endOfWeek(hoje, { weekStartsOn: 1 })   // domingo
+  const inicioStr    = inicioSemana.toISOString().split('T')[0]
+  const fimStr       = fimSemana.toISOString().split('T')[0]
+
+  const labelPeriodo = `${format(inicioSemana, "d 'de' MMM", { locale: ptBR })} – ${format(fimSemana, "d 'de' MMM", { locale: ptBR })}`
+
+  // ── Dados da semana ──────────────────────────────────────────────────────────
+  const gastosSemana   = useMemo(() => gastos.filter(g => g.data >= inicioStr && g.data <= fimStr), [gastos, inicioStr, fimStr])
+  const receitasSemana = useMemo(() => receitas.filter(r => r.data >= inicioStr && r.data <= fimStr), [receitas, inicioStr, fimStr])
+  const dividasSemana  = useMemo(() => dividas.filter(d => {
+    const dt = d.created_at?.split('T')[0] ?? ''
+    return dt >= inicioStr && dt <= fimStr
+  }), [dividas, inicioStr, fimStr])
+
+  const totalGastosSem   = useMemo(() => gastosSemana.reduce((s, g) => s + Number(g.valor), 0), [gastosSemana])
+  const totalReceitasSem = useMemo(() => receitasSemana.reduce((s, r) => s + Number(r.valor), 0), [receitasSemana])
+  const saldoSemana      = totalReceitasSem - totalGastosSem
+  const totalLancamentos = gastosSemana.length + receitasSemana.length + dividasSemana.length
+
+  // ── Categorias ───────────────────────────────────────────────────────────────
+  const porCategoria = useMemo(() => {
+    const contagem: Record<string, { total: number; qtd: number }> = {}
+    gastosSemana.forEach(g => {
+      if (!contagem[g.categoria]) contagem[g.categoria] = { total: 0, qtd: 0 }
+      contagem[g.categoria].total += Number(g.valor)
+      contagem[g.categoria].qtd  += 1
+    })
+    return Object.entries(contagem).sort((a, b) => b[1].total - a[1].total)
+  }, [gastosSemana])
+
+  const catMaiorGasto = porCategoria[0] ?? null
+  const catMaisUsada  = useMemo(() => {
+    if (!porCategoria.length) return null
+    return porCategoria.reduce((a, b) => b[1].qtd > a[1].qtd ? b : a)
+  }, [porCategoria])
+
+  // ── Análise automática ───────────────────────────────────────────────────────
+  const analises = useMemo(() => {
+    const itens: string[] = []
+    if (totalLancamentos === 0) return itens
+
+    if (catMaiorGasto) {
+      const pct = totalGastosSem > 0 ? (catMaiorGasto[1].total / totalGastosSem * 100).toFixed(0) : '0'
+      itens.push(`Você gastou mais com ${catMaiorGasto[0]} nesta semana (${pct}% do total de gastos).`)
+    }
+
+    if (saldoSemana >= 0 && totalReceitasSem > 0) {
+      itens.push('Seu saldo permaneceu positivo durante este período — ótimo sinal de controle financeiro.')
+    } else if (saldoSemana < 0) {
+      itens.push('Seus gastos superaram as receitas esta semana. Vale revisar onde é possível economizar.')
+    }
+
+    if (porCategoria.length <= 2 && gastosSemana.length >= 3) {
+      itens.push('Seus gastos ficaram concentrados em poucas categorias, o que facilita a organização.')
+    } else if (porCategoria.length >= 5) {
+      itens.push('Você registrou gastos em várias categorias — uma visão diversificada das suas despesas.')
+    }
+
+    if (totalLancamentos >= 5) {
+      itens.push(`Você fez ${totalLancamentos} lançamentos esta semana. Continue registrando para análises mais precisas!`)
+    } else if (totalLancamentos > 0 && totalLancamentos < 3) {
+      itens.push('Quanto mais você registrar, mais precisas serão as análises. Tente registrar gastos diariamente.')
+    }
+
+    return itens.slice(0, 3)
+  }, [totalLancamentos, catMaiorGasto, totalGastosSem, saldoSemana, totalReceitasSem, porCategoria, gastosSemana.length])
+
+  // ── Oportunidades de melhoria ────────────────────────────────────────────────
+  const oportunidades = useMemo(() => {
+    const ops: Array<{ icon: string; texto: string }> = []
+
+    if (catMaiorGasto && totalGastosSem > 0) {
+      const pct = catMaiorGasto[1].total / totalGastosSem * 100
+      if (pct > 40) {
+        ops.push({ icon: '✂️', texto: `Reduzir gastos com ${catMaiorGasto[0]}, que representa ${pct.toFixed(0)}% das despesas desta semana.` })
+      }
+    }
+
+    if (dividas.length > 0 && saldoSemana > 0) {
+      ops.push({ icon: '💳', texto: 'Aproveitar o saldo positivo para priorizar o pagamento de dívidas.' })
+    }
+
+    if (totalLancamentos < 5) {
+      ops.push({ icon: '📝', texto: 'Aumentar a frequência dos registros para ter uma visão mais completa das suas finanças.' })
+    }
+
+    if (totalReceitasSem === 0) {
+      ops.push({ icon: '💰', texto: 'Registrar suas receitas desta semana para visualizar seu saldo real.' })
+    }
+
+    if (totalGastosSem > 0 && totalReceitasSem > 0 && totalReceitasSem > totalGastosSem * 1.1) {
+      ops.push({ icon: '🎯', texto: 'Criar uma meta mensal de poupança — você está com saldo favorável para isso.' })
+    }
+
+    return ops.slice(0, 3)
+  }, [catMaiorGasto, totalGastosSem, dividas.length, saldoSemana, totalLancamentos, totalReceitasSem])
+
+  // ── Dados do gráfico de gastos por dia da semana ─────────────────────────────
+  const diasSemana = useMemo(() => {
+    const dias = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(inicioSemana)
+      d.setDate(d.getDate() + i)
+      const ds = d.toISOString().split('T')[0]
+      const total = gastosSemana.filter(g => g.data === ds).reduce((s, g) => s + Number(g.valor), 0)
+      dias.push({
+        dia: format(d, 'EEE', { locale: ptBR }).replace('.', ''),
+        total,
+        isHoje: ds === hoje.toISOString().split('T')[0],
+      })
+    }
+    return dias
+  }, [gastosSemana, inicioSemana, hoje])
+
+  const semDados = totalLancamentos === 0
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-40 w-full rounded-2xl" />
+        <Skeleton className="h-28 w-full rounded-2xl" />
+        <Skeleton className="h-36 w-full rounded-2xl" />
+      </div>
+    )
+  }
+
+  if (semDados) {
+    return (
+      <div className="space-y-3">
+        {/* Estado vazio */}
+        <div
+          className="rounded-2xl p-5 text-center"
+          style={{ backgroundColor: 'oklch(0.48 0.16 162)', boxShadow: '0 4px 24px oklch(0.48 0.16 162 / 35%)' }}
+        >
+          <div className="w-14 h-14 rounded-2xl bg-white/15 flex items-center justify-center mx-auto mb-3">
+            <Calendar size={28} className="text-white" />
+          </div>
+          <p className="text-white font-black text-lg mb-1">Resumo desta semana</p>
+          <p className="text-white/70 text-[13px] leading-relaxed">{labelPeriodo}</p>
+        </div>
+        <div className="bg-card rounded-2xl p-5" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 18%)' }}>
+          <p className="text-foreground font-semibold text-sm mb-1">Nenhum registro esta semana</p>
+          <p className="text-muted-foreground text-[13px] leading-relaxed">
+            Vá no Chat e registre um gasto, receita ou dívida para ver sua análise semanal.
+          </p>
+          <p className="text-[12px] mt-3 text-muted-foreground">Exemplo: <span className="text-primary font-medium">"Almoço 25 reais"</span></p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* ── Card principal da semana ── */}
+      <div
+        className="rounded-2xl p-5"
+        style={{ backgroundColor: 'oklch(0.48 0.16 162)', boxShadow: '0 4px 24px oklch(0.48 0.16 162 / 35%)' }}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <Calendar size={13} className="text-white/70" />
+          <p className="text-[11px] text-white/60 uppercase tracking-widest font-medium">Semana atual</p>
+          <p className="text-[11px] text-white/50 ml-auto">{labelPeriodo}</p>
+        </div>
+
+        <p className="text-[11px] text-white/60 mb-0.5">Saldo da semana</p>
+        <p className="text-3xl font-black text-white leading-tight mb-0.5" style={{ fontFamily: 'Poppins,sans-serif' }}>
+          {saldoSemana >= 0 ? '+' : ''}R$ {Math.abs(saldoSemana).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+        </p>
+        <p className="text-[11px] text-white/60 mb-4">
+          {saldoSemana >= 0 ? 'sobrando nesta semana' : 'no vermelho nesta semana'}
+        </p>
+
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-white/12 rounded-xl p-2.5">
+            <div className="flex items-center gap-1 mb-1">
+              <TrendingUp size={11} className="text-white/70" />
+              <p className="text-[10px] text-white/60">Receitas</p>
+            </div>
+            <p className="font-bold text-white text-xs">R$ {totalReceitasSem.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+          </div>
+          <div className="bg-white/12 rounded-xl p-2.5">
+            <div className="flex items-center gap-1 mb-1">
+              <TrendingDown size={11} className="text-white/70" />
+              <p className="text-[10px] text-white/60">Gastos</p>
+            </div>
+            <p className="font-bold text-red-300 text-xs">R$ {totalGastosSem.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+          </div>
+          <div className="bg-white/12 rounded-xl p-2.5">
+            <div className="flex items-center gap-1 mb-1">
+              <Zap size={11} className="text-white/70" />
+              <p className="text-[10px] text-white/60">Lançamentos</p>
+            </div>
+            <p className="font-bold text-white text-xs">{totalLancamentos}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Stats de categoria ── */}
+      <div className="grid grid-cols-2 gap-2.5">
+        <div className="bg-card rounded-2xl p-4" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 18%)' }}>
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-7 h-7 rounded-lg bg-destructive/15 flex items-center justify-center">
+              <ArrowDownCircle size={13} className="text-destructive" />
+            </div>
+            <p className="text-[11px] text-muted-foreground font-medium">Maior gasto</p>
+          </div>
+          {catMaiorGasto ? (
+            <>
+              <p className="font-bold text-foreground text-sm leading-tight">{catMaiorGasto[0]}</p>
+              <p className="text-destructive font-bold text-base mt-0.5">
+                R$ {catMaiorGasto[1].total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-1">Sem gastos</p>
+          )}
+        </div>
+
+        <div className="bg-card rounded-2xl p-4" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 18%)' }}>
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'oklch(0.48 0.16 162 / 15%)' }}>
+              <Target size={13} style={{ color: 'oklch(0.62 0.18 162)' }} />
+            </div>
+            <p className="text-[11px] text-muted-foreground font-medium">Mais usada</p>
+          </div>
+          {catMaisUsada ? (
+            <>
+              <p className="font-bold text-foreground text-sm leading-tight">{catMaisUsada[0]}</p>
+              <p className="text-[12px] mt-0.5" style={{ color: 'oklch(0.62 0.18 162)' }}>
+                {catMaisUsada[1].qtd} {catMaisUsada[1].qtd === 1 ? 'registro' : 'registros'}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-1">Sem dados</p>
+          )}
+        </div>
+      </div>
+
+      {/* ── Gráfico de gastos por dia ── */}
+      {gastosSemana.length > 0 && (
+        <div className="bg-card rounded-2xl p-4" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 18%)' }}>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg bg-destructive/15 flex items-center justify-center">
+              <TrendingDown size={13} className="text-destructive" />
+            </div>
+            <span className="text-xs font-semibold text-foreground">Gastos por dia</span>
+          </div>
+          <ResponsiveContainer width="100%" height={100}>
+            <BarChart data={diasSemana} barSize={22}>
+              <XAxis dataKey="dia" tick={{ fontSize: 11, fill: 'oklch(0.55 0.005 240)' }} axisLine={false} tickLine={false} />
+              <YAxis hide domain={[0, 'auto']} />
+              <Tooltip
+                formatter={(v: number) => [`R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Gastos']}
+                contentStyle={{ background: 'oklch(0.16 0.012 250)', border: '1px solid oklch(1 0 0 / 8%)', borderRadius: 10, fontSize: 12 }}
+                cursor={{ fill: 'oklch(1 0 0 / 4%)' }}
+              />
+              <Bar dataKey="total" radius={[5, 5, 0, 0]}>
+                {diasSemana.map((entry, idx) => (
+                  <Cell
+                    key={idx}
+                    fill={entry.isHoje ? 'oklch(0.60 0.20 20)' : entry.total > 0 ? 'oklch(0.45 0.16 162)' : 'oklch(0.28 0.008 250)'}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* ── Análise automática ── */}
+      {analises.length > 0 && (
+        <div className="bg-card rounded-2xl p-4" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 18%)' }}>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'oklch(0.48 0.16 162 / 15%)' }}>
+              <Lightbulb size={13} style={{ color: 'oklch(0.62 0.18 162)' }} />
+            </div>
+            <span className="text-xs font-semibold text-foreground">Análise da semana</span>
+          </div>
+          <div className="space-y-2.5">
+            {analises.map((analise, i) => (
+              <div key={i} className="flex items-start gap-2.5">
+                <div
+                  className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5"
+                  style={{ backgroundColor: 'oklch(0.62 0.18 162)' }}
+                />
+                <p className="text-[13px] text-foreground leading-relaxed">{analise}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Oportunidades de melhoria ── */}
+      {oportunidades.length > 0 && (
+        <div className="bg-card rounded-2xl p-4" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 18%)' }}>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'oklch(0.55 0.18 162 / 15%)' }}>
+              <Star size={13} style={{ color: 'oklch(0.68 0.16 162)' }} />
+            </div>
+            <span className="text-xs font-semibold text-foreground">Oportunidades de melhoria</span>
+          </div>
+          <div className="space-y-2.5">
+            {oportunidades.map((op, i) => (
+              <div key={i} className="flex items-start gap-2.5 rounded-xl p-2.5"
+                style={{ background: 'oklch(0.48 0.16 162 / 6%)', border: '1px solid oklch(0.55 0.18 162 / 15%)' }}>
+                <span className="text-base shrink-0 leading-none mt-0.5">{op.icon}</span>
+                <p className="text-[13px] text-foreground leading-relaxed">{op.texto}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Categorias detalhadas ── */}
+      {porCategoria.length > 0 && (
+        <div className="bg-card rounded-2xl p-4" style={{ boxShadow: '0 1px 8px oklch(0 0 0 / 18%)' }}>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg bg-destructive/15 flex items-center justify-center">
+              <CreditCard size={13} className="text-destructive" />
+            </div>
+            <span className="text-xs font-semibold text-foreground">Gastos por categoria</span>
+          </div>
+          <div className="space-y-2.5">
+            {porCategoria.map(([cat, dados]) => {
+              const pct = totalGastosSem > 0 ? (dados.total / totalGastosSem) * 100 : 0
+              return (
+                <div key={cat}>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[13px] text-foreground font-medium">{cat}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-[11px] text-muted-foreground">{pct.toFixed(0)}%</p>
+                      <p className="text-[13px] font-semibold text-foreground">
+                        R$ {dados.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${pct}%`, backgroundColor: 'oklch(0.52 0.18 162)' }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Mensagem final ── */}
+      <div
+        className="rounded-2xl p-4 flex items-start gap-3"
+        style={{ background: 'oklch(0.48 0.16 162 / 10%)', border: '1px solid oklch(0.55 0.18 162 / 25%)' }}
+      >
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'oklch(0.48 0.16 162 / 20%)' }}>
+          <MessageSquare size={16} style={{ color: 'oklch(0.62 0.18 162)' }} />
+        </div>
+        <div>
+          <p className="text-[13px] font-semibold text-foreground leading-snug mb-1">
+            Parabéns por acompanhar suas finanças esta semana.
+          </p>
+          <p className="text-[12px] text-muted-foreground leading-relaxed">
+            Quanto mais informações você registrar, mais precisas serão minhas análises.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ResumoPage() {
+  const [abaSelecionada, setAbaSelecionada] = useState<'mes' | 'semana'>('semana')
   const { gastos, receitas, totalDividas, loading } = useApp()
 
   const MES_ATUAL = format(new Date(), 'yyyy-MM')
@@ -257,7 +634,34 @@ export default function ResumoPage() {
 
   return (
     <div className="overflow-y-auto h-full p-4 space-y-3">
-      {loading ? (
+      {/* ── Seletor de abas ── */}
+      <div
+        className="flex rounded-2xl p-1 gap-1"
+        style={{ background: 'oklch(0.22 0.04 240)' }}
+      >
+        {([
+          { id: 'semana', label: 'Semana' },
+          { id: 'mes',    label: 'Mês'    },
+        ] as const).map(aba => (
+          <button
+            key={aba.id}
+            onClick={() => setAbaSelecionada(aba.id)}
+            className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
+            style={abaSelecionada === aba.id
+              ? { backgroundColor: 'oklch(0.48 0.16 162)', color: 'white', boxShadow: '0 2px 8px oklch(0.48 0.16 162 / 35%)' }
+              : { color: 'oklch(0.55 0.01 240)' }
+            }
+          >
+            {aba.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Conteúdo da aba Semana ── */}
+      {abaSelecionada === 'semana' && <ResumoSemanal />}
+
+      {/* ── Conteúdo da aba Mês ── */}
+      {abaSelecionada === 'mes' && (loading ? (
         <div className="space-y-3">
           <Skeleton className="h-52 w-full rounded-2xl" />
           <Skeleton className="h-28 w-full rounded-2xl" />
@@ -525,7 +929,7 @@ export default function ResumoPage() {
             </ResponsiveContainer>
           </div>
         </>
-      )}
+      ))}
     </div>
   )
 }
