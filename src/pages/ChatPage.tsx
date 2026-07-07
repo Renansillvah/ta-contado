@@ -11,15 +11,104 @@ interface Mensagem {
   timestamp: Date
 }
 
+type IntencaoIA =
+  | { acao: 'gasto'; descricao: string; valor: number; categoria: string }
+  | { acao: 'receita'; descricao: string; valor: number; categoria: string }
+  | { acao: 'divida'; descricao: string; valor: number }
+  | { acao: 'resumo' }
+  | { acao: 'conversa'; resposta: string }
+  | { acao: 'pedir_valor'; item: string }
+
+async function processarComIA(
+  texto: string,
+  totalGastos: number,
+  totalReceitas: number,
+  totalDividas: number
+): Promise<IntencaoIA> {
+  const apiKey = import.meta.env.VITE_OPENAI_API_KEY
+  if (!apiKey) throw new Error('VITE_OPENAI_API_KEY não configurada')
+
+  const hoje = new Date().toLocaleDateString('pt-BR')
+  const saldo = totalReceitas - totalGastos
+
+  const systemPrompt = `Você é um assistente financeiro pessoal. Analise a mensagem do usuário e retorne um JSON com a intenção detectada.
+
+Contexto financeiro atual do usuário:
+- Gastos totais: R$ ${totalGastos.toFixed(2)}
+- Receitas totais: R$ ${totalReceitas.toFixed(2)}
+- Dívidas totais: R$ ${totalDividas.toFixed(2)}
+- Saldo: R$ ${saldo.toFixed(2)}
+- Data de hoje: ${hoje}
+
+Retorne APENAS um JSON válido com uma das seguintes estruturas:
+
+1. Para registrar um GASTO (compra, pagamento, despesa):
+{"acao":"gasto","descricao":"nome curto do item","valor":número,"categoria":"Alimentação|Transporte|Saúde|Lazer|Compras|Moradia|Educação|Outros"}
+
+2. Para registrar uma RECEITA (recebeu dinheiro, salário, freela):
+{"acao":"receita","descricao":"fonte da receita","valor":número,"categoria":"Salário|Freela / Serviço|Venda|Investimento|Aluguel|Outros"}
+
+3. Para registrar uma DÍVIDA (deve, empréstimo, cartão, financiamento):
+{"acao":"divida","descricao":"nome da dívida","valor":número}
+
+4. Para ver resumo/saldo (palavras como: resumo, saldo, como estou, quanto gastei, total):
+{"acao":"resumo"}
+
+5. Se menciona algo sem valor:
+{"acao":"pedir_valor","item":"nome do item mencionado"}
+
+6. Para perguntas gerais sobre finanças, dicas, ou qualquer outra conversa:
+{"acao":"conversa","resposta":"sua resposta em português, máximo 2 frases, tom amigável e direto"}
+
+Exemplos:
+"almoço 25" → {"acao":"gasto","descricao":"Almoço","valor":25,"categoria":"Alimentação"}
+"paguei conta de luz 150" → {"acao":"gasto","descricao":"Conta de luz","valor":150,"categoria":"Moradia"}
+"fui no mercado e gastei 200" → {"acao":"gasto","descricao":"Mercado","valor":200,"categoria":"Alimentação"}
+"salário 4500" → {"acao":"receita","descricao":"Salário","valor":4500,"categoria":"Salário"}
+"recebi 800 de freela" → {"acao":"receita","descricao":"Freela","valor":800,"categoria":"Freela / Serviço"}
+"parcela do carro 600" → {"acao":"divida","descricao":"Parcela do carro","valor":600}
+"devo 2000 no cartão" → {"acao":"divida","descricao":"Cartão de crédito","valor":2000}
+"25,90 no lanche" → {"acao":"gasto","descricao":"Lanche","valor":25.90,"categoria":"Alimentação"}
+"como estou esse mês?" → {"acao":"resumo"}
+"comprei roupa" → {"acao":"pedir_valor","item":"roupa"}
+
+IMPORTANTE: Retorne SOMENTE o JSON, sem texto adicional, sem markdown.`
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: texto },
+      ],
+      max_tokens: 150,
+      temperature: 0.1,
+    }),
+  })
+
+  if (!response.ok) throw new Error(`OpenAI error: ${response.status}`)
+
+  const data = await response.json()
+  const raw = data.choices?.[0]?.message?.content?.trim() ?? '{}'
+  return JSON.parse(raw) as IntencaoIA
+}
+
+function fmtValor(v: number): string {
+  return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 function gerarMsgInicial(): string {
-  // Verificar se há mensagem gerada pela IA no onboarding
   const msgIA = localStorage.getItem('onboarding_msg_ia')
   if (msgIA) {
-    localStorage.removeItem('onboarding_msg_ia') // usa uma vez só
+    localStorage.removeItem('onboarding_msg_ia')
     return msgIA
   }
 
-  // Fallback estático baseado no perfil
   const objetivo = localStorage.getItem('onboarding_objetivo') || ''
   const renda = parseFloat(localStorage.getItem('onboarding_renda') || '0')
   const nome = localStorage.getItem('user_name') || ''
@@ -52,147 +141,12 @@ const MSG_INICIAL: Mensagem = {
   timestamp: new Date(),
 }
 
-const REGEX_RECEITA = /(?:recebi|ganhei|entrou|salário|pagamento)\s*(?:de\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
-const REGEX_DIVIDA = /(?:devo|tenho\s+(?:uma\s+)?dívida|cartão|financiamento|empréstimo)\s*(?:de\s+)?(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
-const REGEX_GASTO_KEYWORDS = /(?:gastei|paguei|comprei|almoço|lanche|café|jantar|gasolina|uber|ônibus|metrô|ifood|mercado|supermercado|farmácia|remédio|médico|cinema|bar|show|netflix|spotify|roupa|sapato|celular|eletrônico|aluguel|luz|água|internet|gás|curso|livro|escola|tráfego|anúncio|equipamento)\s*[a-zA-Zçãõéíóúàèìòùâêîôûäëïöü\s]*\s*(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i
-const REGEX_GASTO_GENERICO = /^(.+?)\s+(\d+(?:[.,]\d{1,2})?)(?:\s+reais?)?$/i
-
-// ── Extrai descrição limpa removendo prefixos e o valor ─────────────────────
-function extrairDescricao(texto: string): string {
-  let desc = texto.trim()
-  // Remove prefixos verbais
-  desc = desc.replace(/^(?:gastei|paguei|comprei)\s+/i, '')
-  // Remove o valor numérico e sufixo "reais" do final
-  desc = desc.replace(/\s+r?\$?\s*\d+(?:[.,]\d{1,2})?\s*(?:reais?)?$/i, '')
-  // Remove "de " solto no início
-  desc = desc.replace(/^de\s+/i, '')
-  // Capitaliza primeira letra
-  desc = desc.charAt(0).toUpperCase() + desc.slice(1)
-  return desc.trim() || texto.trim()
-}
-
-// ── Extrai descrição de receita removendo prefixos verbais ──────────────────
-function extrairDescricaoReceita(texto: string): string {
-  let desc = texto.trim()
-  // Remove verbos de receita no início
-  desc = desc.replace(/^(?:recebi|ganhei|entrou|vendi|salário de|pagamento de|ganho de)\s+/i, '')
-  // Remove valor numérico no início (ex: "750 Show Barretos" → "Show Barretos")
-  desc = desc.replace(/^(?:r\$\s*)?\d+(?:[.,]\d{1,2})?\s*(?:reais?)?\s*(?:de\s+)?/i, '')
-  // Remove valor numérico no final
-  desc = desc.replace(/\s+(?:r\$\s*)?\d+(?:[.,]\d{1,2})?\s*(?:reais?)?$/i, '')
-  // Remove "de " solto no início
-  desc = desc.replace(/^de\s+/i, '')
-  desc = desc.trim()
-  // Normaliza nomes conhecidos
-  const lower = desc.toLowerCase()
-  if (!desc || lower === 'motoboy' || lower === 'entrega') desc = 'Motoboy'
-  else if (lower === 'drone') desc = 'Gravação drone'
-  // Capitaliza e limita a 20 chars para não truncar na UI
-  desc = desc.charAt(0).toUpperCase() + desc.slice(1)
-  if (desc.length > 20) desc = desc.substring(0, 20).trim()
-  return desc || texto.trim().substring(0, 20)
-}
-
-// ── Categoriza gastos ────────────────────────────────────────────────────────
-function detectarCategoria(texto: string): string {
-  const t = texto.toLowerCase()
-  if (/almoço|lanche|café|jantar|restaurante|ifood|delivery|mercado|supermercado|padaria|açougue|feira|doce|sorvete|pizza|hamburguer|sushi|comida|refeição/.test(t)) return 'Alimentação'
-  if (/uber|99|taxi|táxi|ônibus|metrô|estacionamento|pedágio|transporte|gasolina|combustível|etanol|moto|bicicleta|passagem/.test(t)) return 'Transporte'
-  if (/farmácia|remédio|médico|dentista|hospital|consulta|exame|plano de saúde|saúde|academia|psicólogo/.test(t)) return 'Saúde'
-  if (/cinema|bar|teatro|jogos|game|streaming|lazer|viagem|hotel|passeio|ingresso|evento|festa|show/.test(t)) return 'Lazer'
-  if (/roupa|sapato|celular|eletrônico|computador|notebook|tênis|bolsa|acessório|compras|shopping/.test(t)) return 'Compras'
-  if (/aluguel|luz|água|internet|gás|condomínio|iptu|financiamento|moradia|casa|apartamento/.test(t)) return 'Moradia'
-  if (/curso|livro|escola|faculdade|universidade|material|diploma|treinamento/.test(t)) return 'Educação'
-  if (/netflix|spotify|amazon|prime|disney|streaming/.test(t)) return 'Lazer'
-  return 'Outros'
-}
-
-// ── Categoriza receitas ──────────────────────────────────────────────────────
-function detectarCategoriaReceita(texto: string): string {
-  const t = texto.toLowerCase()
-  if (/show|apresentação|performance|música|cantor|cantora|banda|palco|evento musical/.test(t)) return 'Show / Música'
-  if (/drone|gravação|filmagem|vídeo|foto|fotografia|edição|captação/.test(t)) return 'Drone / Vídeo'
-  if (/motoboy|entrega|frete|delivery|courier|moto/.test(t)) return 'Motoboy / Entrega'
-  if (/freela|freelance|serviço|trabalho|projeto|cliente|job|consultoria/.test(t)) return 'Freela / Serviço'
-  if (/salário|salario|pagamento fixo|contracheque|mensal/.test(t)) return 'Salário'
-  if (/aluguel|aluguei|locação/.test(t)) return 'Aluguel'
-  if (/vendi|venda|vendeu|produto|mercadoria/.test(t)) return 'Venda'
-  if (/investimento|dividendo|rendimento|juros|fundo|ação|cripto/.test(t)) return 'Investimento'
-  return 'Outros'
-}
-
-function parseComando(
-  texto: string,
-  adicionarGasto: (g: any) => Promise<void>,
-  adicionarReceita: (r: any) => Promise<void>,
-  adicionarDivida: (d: any) => Promise<void>,
-  totalGastos: number,
-  totalReceitas: number,
-  totalDividas: number
-): string {
-  const t = texto.toLowerCase().trim()
-  const hoje = new Date().toISOString().split('T')[0]
-
-  if (t.includes('resumo') || t.includes('como foi') || t.includes('saldo') || t.includes('total') || t.includes('quanto')) {
-    const saldo = totalReceitas - totalGastos
-    return `Seu resumo atual:\n\nGastos: R$ ${totalGastos.toFixed(2).replace('.', ',')}\nReceitas: R$ ${totalReceitas.toFixed(2).replace('.', ',')}\nDívidas: R$ ${totalDividas.toFixed(2).replace('.', ',')}\n\nSaldo: R$ ${saldo.toFixed(2).replace('.', ',')}`
-  }
-
-  const matchReceita = t.match(REGEX_RECEITA)
-  if (matchReceita) {
-    const valor = parseFloat(matchReceita[1].replace(',', '.'))
-    if (valor > 0) {
-      const descricao = extrairDescricaoReceita(texto)
-      const categoria = detectarCategoriaReceita(texto)
-      adicionarReceita({ descricao, categoria, valor, tipo: 'recebido', data: hoje })
-      return `Receita de R$ ${valor.toFixed(2).replace('.', ',')} registrada em ${categoria}!`
-    }
-  }
-
-  const matchDivida = t.match(REGEX_DIVIDA)
-  if (matchDivida) {
-    const valor = parseFloat(matchDivida[1].replace(',', '.'))
-    if (valor > 0) {
-      const descricao = extrairDescricao(texto)
-      adicionarDivida({ nome: descricao, tipo: 'outros', valor_total: valor, valor_pago: 0, parcelado: false })
-      return `Dívida de R$ ${valor.toFixed(2).replace('.', ',')} registrada!`
-    }
-  }
-
-  const matchGastoKw = t.match(REGEX_GASTO_KEYWORDS)
-  if (matchGastoKw) {
-    const valor = parseFloat(matchGastoKw[1].replace(',', '.'))
-    if (valor > 0) {
-      const descricao = extrairDescricao(texto)
-      const categoria = detectarCategoria(texto)
-      adicionarGasto({ descricao, valor, categoria, data: hoje })
-      return `Gasto de R$ ${valor.toFixed(2).replace('.', ',')} registrado em ${categoria}!`
-    }
-  }
-
-  const matchGenerico = t.match(REGEX_GASTO_GENERICO)
-  if (matchGenerico) {
-    const valor = parseFloat(matchGenerico[2].replace(',', '.'))
-    if (valor > 0 && valor < 100000) {
-      const descricao = extrairDescricao(texto)
-      const categoria = detectarCategoria(texto)
-      adicionarGasto({ descricao, valor, categoria, data: hoje })
-      return `Gasto de R$ ${valor.toFixed(2).replace('.', ',')} registrado em ${categoria}!`
-    }
-  }
-
-  if (/[a-zA-ZÀ-ú]/.test(t) && !/\d/.test(t)) {
-    return `Qual o valor? Por exemplo:\n"${texto.trim()} 50 reais"`
-  }
-
-  return `Não entendi. Tente:\n• "Almoço 25 reais"\n• "Recebi 3000 de freela"\n• "Devo 500 no cartão"\n• "Resumo do mês"`
-}
-
 export default function ChatPage() {
   const [mensagens, setMensagens] = useState<Mensagem[]>([MSG_INICIAL])
   const [input, setInput] = useState('')
   const [gravando, setGravando] = useState(false)
   const [offline, setOffline] = useState(!navigator.onLine)
+  const [processando, setProcessando] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -209,9 +163,9 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [mensagens])
 
-  const enviar = () => {
+  const enviar = async () => {
     const texto = input.trim()
-    if (!texto) return
+    if (!texto || processando) return
 
     const msgUsuario: Mensagem = {
       id: Date.now().toString(),
@@ -221,25 +175,51 @@ export default function ChatPage() {
     }
     setMensagens(prev => [...prev, msgUsuario])
     setInput('')
+    setProcessando(true)
 
-    const resposta = parseComando(
-      texto, adicionarGasto, adicionarReceita, adicionarDivida,
-      totalGastos, totalReceitas, totalDividas
-    )
+    try {
+      const intencao = await processarComIA(texto, totalGastos, totalReceitas, totalDividas)
+      const hoje = new Date().toISOString().split('T')[0]
+      let resposta = ''
 
-    setTimeout(() => {
-      const msgBot: Mensagem = {
+      if (intencao.acao === 'gasto') {
+        await adicionarGasto({ descricao: intencao.descricao, valor: intencao.valor, categoria: intencao.categoria, data: hoje })
+        resposta = `Gasto de R$ ${fmtValor(intencao.valor)} registrado em ${intencao.categoria}!`
+      } else if (intencao.acao === 'receita') {
+        await adicionarReceita({ descricao: intencao.descricao, categoria: intencao.categoria, valor: intencao.valor, tipo: 'recebido', data: hoje })
+        resposta = `Receita de R$ ${fmtValor(intencao.valor)} registrada em ${intencao.categoria}!`
+      } else if (intencao.acao === 'divida') {
+        await adicionarDivida({ nome: intencao.descricao, tipo: 'outros', valor_total: intencao.valor, valor_pago: 0, parcelado: false })
+        resposta = `Dívida de R$ ${fmtValor(intencao.valor)} registrada!`
+      } else if (intencao.acao === 'resumo') {
+        const saldo = totalReceitas - totalGastos
+        resposta = `Seu resumo atual:\n\nGastos: R$ ${fmtValor(totalGastos)}\nReceitas: R$ ${fmtValor(totalReceitas)}\nDívidas: R$ ${fmtValor(totalDividas)}\n\nSaldo: R$ ${fmtValor(saldo)}`
+      } else if (intencao.acao === 'pedir_valor') {
+        resposta = `Qual o valor de ${intencao.item}? Por exemplo:\n"${intencao.item} 50 reais"`
+      } else if (intencao.acao === 'conversa') {
+        resposta = intencao.resposta
+      }
+
+      setMensagens(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         tipo: 'assistente',
         conteudo: resposta,
         timestamp: new Date(),
-      }
-      setMensagens(prev => [...prev, msgBot])
-    }, 300)
+      }])
+    } catch {
+      setMensagens(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        tipo: 'assistente',
+        conteudo: 'Não consegui processar agora. Tente novamente em instantes.',
+        timestamp: new Date(),
+      }])
+    } finally {
+      setProcessando(false)
+    }
   }
 
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar() }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void enviar() }
   }
 
   const toggleGravacao = () => {
@@ -307,6 +287,20 @@ export default function ChatPage() {
             </div>
           </div>
         ))}
+        {processando && (
+          <div className="flex justify-start">
+            <div className="w-7 h-7 rounded-xl overflow-hidden shrink-0 mr-2 mt-0.5" style={{ background: 'oklch(0.48 0.16 162)' }}>
+              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', fontSize: '10px', fontWeight: 800, color: 'white', fontFamily: 'Poppins,sans-serif' }}>TC</span>
+            </div>
+            <div className="rounded-2xl rounded-bl-md px-4 py-3" style={{ backgroundColor: 'oklch(0.22 0.04 240)', boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' }}>
+              <div className="flex gap-1 items-center h-5">
+                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+            </div>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 
@@ -315,9 +309,10 @@ export default function ChatPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={toggleGravacao}
+            disabled={processando}
             className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-colors ${
               gravando ? 'bg-destructive text-white' : 'bg-secondary text-muted-foreground hover:text-foreground'
-            }`}
+            } disabled:opacity-50`}
           >
             <Mic size={17} />
           </button>
@@ -326,12 +321,14 @@ export default function ChatPage() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKey}
-            placeholder="Gasto, receita, dívida..."
-            className="flex-1 bg-secondary text-foreground placeholder:text-muted-foreground rounded-full px-4 py-2.5 text-sm outline-none border border-border focus:border-primary transition-colors"
+            disabled={processando}
+            placeholder={processando ? 'Processando...' : 'Gasto, receita, dívida...'}
+            className="flex-1 bg-secondary text-foreground placeholder:text-muted-foreground rounded-full px-4 py-2.5 text-sm outline-none border border-border focus:border-primary transition-colors disabled:opacity-60"
           />
           <button
-            onClick={enviar}
-            className="w-11 h-11 rounded-full text-primary-foreground flex items-center justify-center shrink-0 active:scale-95 transition-transform"
+            onClick={() => void enviar()}
+            disabled={processando}
+            className="w-11 h-11 rounded-full text-primary-foreground flex items-center justify-center shrink-0 active:scale-95 transition-transform disabled:opacity-50"
             style={{ backgroundColor: 'oklch(0.62 0.18 162)' }}
           >
             <Send size={17} />
