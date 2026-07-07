@@ -107,7 +107,7 @@ export default function AuthPage({ onAutenticado }: Props) {
         } else if (error.message.includes('rate limit') || error.message.includes('over_email')) {
           setErro('Muitos cadastros em pouco tempo. Aguarde alguns minutos e tente novamente.')
         } else {
-          setErro('Erro ao criar conta. Tente novamente.')
+          setErro(`Erro: ${error.message}`)
         }
         return
       }
