@@ -12,6 +12,7 @@ import AuthPage from '@/pages/AuthPage'
 import OnboardingApp from '@/components/OnboardingApp'
 import SplashScreen from '@/components/SplashScreen'
 import OnboardingNome from '@/components/OnboardingNome'
+import OnboardingDesafio, { type Desafio } from '@/components/OnboardingDesafio'
 import { WhatsAppConnect } from '@/components/WhatsAppConnect'
 import { Toaster } from 'sonner'
 import { toast } from 'sonner'
@@ -540,9 +541,14 @@ function Root() {
 
   const splashVisto = !!localStorage.getItem('splash_visto')
   const nomeColetado = !!localStorage.getItem('onboarding_nome_coletado')
+  const desafioColetado = !!localStorage.getItem('onboarding_desafio')
 
   const [showSplash, setShowSplash] = useState(!splashVisto)
   const [showNome, setShowNome] = useState(!splashVisto || !nomeColetado)
+  const [showDesafio, setShowDesafio] = useState(!splashVisto || !nomeColetado || !desafioColetado)
+  const [nomeOnboarding, setNomeOnboarding] = useState(
+    localStorage.getItem('onboarding_nome_coletado') ?? ''
+  )
 
   useEffect(() => {
     // Sessão existente
@@ -567,7 +573,17 @@ function Root() {
   const finalizarNome = (nome: string) => {
     localStorage.setItem('onboarding_nome_coletado', nome)
     localStorage.setItem('user_name', nome)
+    setNomeOnboarding(nome)
     setShowNome(false)
+  }
+
+  const finalizarDesafio = (desafio: Desafio) => {
+    localStorage.setItem('onboarding_desafio', desafio)
+    setShowDesafio(false)
+  }
+
+  const voltarParaNome = () => {
+    setShowNome(true)
   }
 
   // 1. Splash — aparece uma única vez
@@ -575,9 +591,20 @@ function Root() {
     return <SplashScreen onFinalizar={finalizarSplash} />
   }
 
-  // 2. Coleta de nome — aparece após a splash, antes do auth
+  // 2. Coleta de nome
   if (showNome) {
     return <OnboardingNome onContinuar={finalizarNome} />
+  }
+
+  // 3. Desafio financeiro
+  if (showDesafio) {
+    return (
+      <OnboardingDesafio
+        nome={nomeOnboarding}
+        onContinuar={finalizarDesafio}
+        onVoltar={voltarParaNome}
+      />
+    )
   }
 
   if (authLoading) {
