@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { MessageSquare, Receipt, CreditCard, TrendingUp, BarChart2, X, Target, Share2, Download, Trash2, ChevronRight, CheckCircle, MessageCircle, Pencil, Check, LogOut } from 'lucide-react'
+import RunMigration from '@/components/RunMigration'
 import { AppProvider, useApp } from '@/context/AppContext'
 import PaywallModal from '@/components/PaywallModal'
 import { podeUsar } from '@/lib/planos'
@@ -539,6 +540,11 @@ function AppContent({ user }: { user: User }) {
 
 // ── Raiz com controle de sessão ───────────────────────────────────────────────
 function Root() {
+  // Rota de migração especial (acessível via ?migrate=1)
+  if (window.location.search.includes('migrate=1')) {
+    return <RunMigration />
+  }
+
   const [user, setUser] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
 
