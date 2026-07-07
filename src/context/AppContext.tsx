@@ -43,10 +43,19 @@ export function AppProvider({ children, user }: { children: ReactNode; user: Use
     if (!user) { setLoading(false); return }
     setLoading(true)
     try {
+      // Tenta filtrar por user_id; se a coluna não existir ainda, carrega tudo
+      const tryWithUserId = async (table: string, order: string) => {
+        const r1 = await supabase.from(table).select('*').eq('user_id', user.id).order(order, { ascending: false })
+        if (r1.error?.code === '42703') {
+          // Coluna user_id ainda não existe — carrega sem filtro (migration pendente)
+          return supabase.from(table).select('*').order(order, { ascending: false })
+        }
+        return r1
+      }
       const [rGastos, rDividas, rReceitas] = await Promise.all([
-        supabase.from('gastos').select('*').eq('user_id', user.id).order('data', { ascending: false }),
-        supabase.from('dividas').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-        supabase.from('receitas').select('*').eq('user_id', user.id).order('data', { ascending: false }),
+        tryWithUserId('gastos', 'data'),
+        tryWithUserId('dividas', 'created_at'),
+        tryWithUserId('receitas', 'data'),
       ])
       if (rGastos.error || rDividas.error || rReceitas.error) {
         setSupabaseOk(false)
@@ -69,7 +78,7 @@ export function AppProvider({ children, user }: { children: ReactNode; user: Use
     if (!user) return
     const channel = supabase
       .channel('realtime-user-' + user.id)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gastos', filter: `user_id=eq.${user.id}` }, (payload) => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gastos' }, (payload) => {
         setGastos(prev => {
           if (prev.find(g => g.id === payload.new.id)) return prev
           toast('Gasto registrado pelo WhatsApp!', { icon: '💸' })
@@ -97,7 +106,13 @@ export function AppProvider({ children, user }: { children: ReactNode; user: Use
 
   const adicionarGasto = async (g: Omit<Gasto, 'id' | 'created_at'>) => {
     if (!user) return
-    const { data, error } = await supabase.from('gastos').insert([{ ...g, user_id: user.id }]).select().single()
+    // Inclui user_id; se a coluna não existir ainda, faz insert sem ele
+    const payload: any = { ...g, user_id: user.id }
+    let { data, error } = await supabase.from('gastos').insert([payload]).select().single()
+    if (error?.code === '42703') {
+      const r = await supabase.from('gastos').insert([g]).select().single()
+      data = r.data; error = r.error
+    }
     if (error) { toast.error('Erro ao salvar gasto'); return }
     setGastos(prev => [data, ...prev])
     toast.success('Gasto registrado!')
@@ -112,7 +127,12 @@ export function AppProvider({ children, user }: { children: ReactNode; user: Use
 
   const adicionarDivida = async (d: Omit<Divida, 'id' | 'created_at'>) => {
     if (!user) return
-    const { data, error } = await supabase.from('dividas').insert([{ ...d, user_id: user.id }]).select().single()
+    const payload: any = { ...d, user_id: user.id }
+    let { data, error } = await supabase.from('dividas').insert([payload]).select().single()
+    if (error?.code === '42703') {
+      const r = await supabase.from('dividas').insert([d]).select().single()
+      data = r.data; error = r.error
+    }
     if (error) { toast.error('Erro ao salvar dívida'); return }
     setDividas(prev => [data, ...prev])
     toast.success('Dívida registrada!')
@@ -144,7 +164,12 @@ export function AppProvider({ children, user }: { children: ReactNode; user: Use
 
   const adicionarReceita = async (r: Omit<Receita, 'id' | 'created_at'>) => {
     if (!user) return
-    const { data, error } = await supabase.from('receitas').insert([{ ...r, user_id: user.id }]).select().single()
+    const payload: any = { ...r, user_id: user.id }
+    let { data, error } = await supabase.from('receitas').insert([payload]).select().single()
+    if (error?.code === '42703') {
+      const r2 = await supabase.from('receitas').insert([r]).select().single()
+      data = r2.data; error = r2.error
+    }
     if (error) { toast.error('Erro ao salvar receita'); return }
     setReceitas(prev => [data, ...prev])
     toast.success('Receita registrada!')
