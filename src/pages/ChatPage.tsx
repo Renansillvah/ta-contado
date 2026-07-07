@@ -31,12 +31,19 @@ interface DadosUau {
   followUp: string
 }
 
+interface DadosRetorno {
+  nome: string
+  qtdLancamentos: number
+  totalMovimentado: number
+}
+
 interface Mensagem {
   id: string
-  tipo: 'usuario' | 'assistente' | 'uau'
+  tipo: 'usuario' | 'assistente' | 'uau' | 'retorno'
   conteudo: string
   timestamp: Date
   uau?: DadosUau
+  retorno?: DadosRetorno
 }
 
 type IntencaoIA =
@@ -280,8 +287,9 @@ const CHIPS_INICIAIS = [
   { label: 'Ver meu resumo', input: 'Resumo do mês' },
 ]
 
-const KEY_UAU       = 'chat_momento_uau_exibido'
-const KEY_ANCORAGEM = 'chat_ancoragem_retorno_exibida'
+const KEY_UAU           = 'chat_momento_uau_exibido'
+const KEY_ANCORAGEM     = 'chat_ancoragem_retorno_exibida'
+const KEY_RETORNO_DIA   = 'chat_retorno_ultimo_dia'   // armazena "YYYY-MM-DD" do último retorno exibido
 
 function gerarUau(
   acao: 'gasto' | 'receita' | 'divida',
@@ -363,7 +371,7 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
   }, [])
 
-  const { adicionarGasto, adicionarReceita, adicionarDivida, totalGastos, totalReceitas, totalDividas, user } = useApp()
+  const { adicionarGasto, adicionarReceita, adicionarDivida, totalGastos, totalReceitas, totalDividas, user, gastos, receitas, dividas, loading } = useApp()
 
   const dispararAncoragem = (nome: string) => {
     if (localStorage.getItem(KEY_ANCORAGEM)) return
@@ -413,6 +421,56 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]) // dispara quando o user fica disponível
+
+  // Retorno do segundo dia — dispara uma vez por dia quando há dados de dias anteriores
+  useEffect(() => {
+    if (!user || loading) return
+
+    const onboardingConcluido = !!localStorage.getItem('onboarding_concluido')
+    if (!onboardingConcluido) return
+
+    const hoje = new Date().toISOString().split('T')[0]
+    const ultimoRetorno = localStorage.getItem(KEY_RETORNO_DIA)
+    if (ultimoRetorno === hoje) return // já exibiu hoje
+
+    // Ontem
+    const ontem = new Date()
+    ontem.setDate(ontem.getDate() - 1)
+    const ontemStr = ontem.toISOString().split('T')[0]
+
+    // Coleta lançamentos de ontem (gastos + receitas + dívidas)
+    const gastosOntem   = gastos.filter(g => g.data === ontemStr)
+    const receitasOntem = receitas.filter(r => r.data === ontemStr)
+    const dividasOntem  = dividas.filter(d => {
+      if (!d.created_at) return false
+      return d.created_at.split('T')[0] === ontemStr
+    })
+
+    const totalLancamentos = gastosOntem.length + receitasOntem.length + dividasOntem.length
+    if (totalLancamentos === 0) return // sem dados de ontem, não exibe
+
+    const totalMovimentado =
+      gastosOntem.reduce((s, g) => s + Number(g.valor), 0) +
+      receitasOntem.reduce((s, r) => s + Number(r.valor), 0) +
+      dividasOntem.reduce((s, d) => s + Number(d.valor_total), 0)
+
+    const nome = (user.user_metadata?.full_name as string | undefined)
+      || localStorage.getItem('user_name')
+      || ''
+
+    localStorage.setItem(KEY_RETORNO_DIA, hoje)
+
+    setTimeout(() => {
+      setMensagens(prev => [...prev, {
+        id: `retorno-${hoje}`,
+        tipo: 'retorno',
+        conteudo: '',
+        timestamp: new Date(),
+        retorno: { nome, qtdLancamentos: totalLancamentos, totalMovimentado },
+      }])
+    }, 800)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, loading]) // dispara quando autenticação e dados estiverem prontos
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -586,6 +644,110 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
       {/* Mensagens */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
         {mensagens.map(msg => {
+          // ── Retorno do segundo dia ───────────────────────────────
+          if (msg.tipo === 'retorno' && msg.retorno) {
+            const r = msg.retorno
+            const primeiro = r.nome.split(' ')[0] || 'você'
+            const hora = new Date().getHours()
+            const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
+            const saudacaoEmoji = hora < 12 ? '☀️' : hora < 18 ? '🌤️' : '🌙'
+            const lancTxt = r.qtdLancamentos === 1
+              ? '1 lançamento'
+              : `${r.qtdLancamentos} lançamentos`
+
+            return (
+              <div key={msg.id} className="flex justify-start" style={{ animation: 'uauEntrada 0.45s cubic-bezier(0.22,1,0.36,1)' }}>
+                {/* Avatar */}
+                <div className="w-7 h-7 rounded-xl overflow-hidden shrink-0 mr-2 mt-0.5" style={{ background: 'oklch(0.48 0.16 162)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', fontSize: '10px', fontWeight: 800, color: 'white', fontFamily: 'Poppins,sans-serif' }}>TC</span>
+                </div>
+
+                <div className="flex-1 max-w-[84%] space-y-2">
+                  {/* Saudação */}
+                  <div
+                    className="rounded-2xl rounded-bl-md px-4 py-3"
+                    style={{ backgroundColor: 'oklch(0.22 0.04 240)', boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' }}
+                  >
+                    <p className="text-sm font-semibold text-foreground mb-0.5">TC 🤝</p>
+                    <p className="text-sm text-foreground">{saudacao}, {primeiro}! {saudacaoEmoji}</p>
+                    <p className="text-[11px] mt-1.5" style={{ color: 'oklch(0.58 0.01 240)' }}>Ontem você registrou:</p>
+                  </div>
+
+                  {/* Card de resumo de ontem */}
+                  <div
+                    className="rounded-2xl px-4 py-3.5 space-y-2"
+                    style={{
+                      background: 'oklch(0.48 0.16 162 / 10%)',
+                      border: '1.5px solid oklch(0.55 0.18 162 / 30%)',
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">💸</span>
+                        <p className="text-[13px] font-semibold text-foreground">{lancTxt}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">💰</span>
+                        <p className="text-[13px]" style={{ color: 'oklch(0.58 0.01 240)' }}>Total movimentado</p>
+                      </div>
+                      <p
+                        className="text-[14px] font-black"
+                        style={{ color: 'oklch(0.62 0.18 162)', fontFamily: 'Poppins,sans-serif' }}
+                      >
+                        R$ {r.totalMovimentado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Convite */}
+                  <div
+                    className="rounded-2xl rounded-bl-md px-4 py-3"
+                    style={{ backgroundColor: 'oklch(0.22 0.04 240)', boxShadow: '0 1px 6px oklch(0 0 0 / 20%)' }}
+                  >
+                    <p className="text-sm text-foreground mb-3">Hoje é um novo dia.<br />Já teve algum gasto ou recebimento?</p>
+
+                    {/* Botões rápidos */}
+                    <div className="flex flex-col gap-1.5">
+                      {[
+                        { emoji: '💸', label: 'Registrar gasto',  input: 'Gastei ' },
+                        { emoji: '💰', label: 'Recebi algo',       input: 'Recebi ' },
+                        { emoji: '📊', label: 'Ver meu resumo',    input: 'Resumo do mês' },
+                      ].map(btn => (
+                        <button
+                          key={btn.label}
+                          onClick={() => {
+                            if (btn.input === 'Resumo do mês') {
+                              void enviarTexto('Resumo do mês')
+                            } else {
+                              setInput(btn.input)
+                              setChipsVisiveis(false)
+                              setTimeout(() => inputRef.current?.focus(), 50)
+                            }
+                          }}
+                          className="flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] font-medium transition-all active:scale-[0.97] text-left"
+                          style={{
+                            background: 'oklch(0.48 0.16 162 / 12%)',
+                            border: '1px solid oklch(0.55 0.18 162 / 30%)',
+                            color: 'oklch(0.75 0.12 162)',
+                          }}
+                        >
+                          <span>{btn.emoji}</span>
+                          {btn.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <p className="text-[10px] mt-2.5 opacity-40 text-right">
+                      {format(msg.timestamp, 'HH:mm', { locale: ptBR })}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )
+          }
+
           // ── Mensagem UAU ────────────────────────────────────────
           if (msg.tipo === 'uau' && msg.uau) {
             const u = msg.uau
