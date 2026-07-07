@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Mic, Send, WifiOff } from 'lucide-react'
+import { lerPerfil } from '@/lib/onboardingPerfil'
 
 function AudioBars({ volumes }: { volumes: [number, number, number] }) {
   return (
@@ -134,36 +135,76 @@ function fmtValor(v: number): string {
   return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function gerarMsgInicial(): string {
-  const msgIA = localStorage.getItem('onboarding_msg_ia')
-  if (msgIA) {
-    localStorage.removeItem('onboarding_msg_ia')
-    return msgIA
+// Chave que marca se a mensagem de boas-vindas pós-onboarding já foi exibida
+const KEY_BOAS_VINDAS_EXIBIDA = 'chat_boas_vindas_exibida'
+
+function gerarMsgBoasVindas(): string | null {
+  // Só exibe uma vez
+  if (localStorage.getItem(KEY_BOAS_VINDAS_EXIBIDA)) return null
+
+  const perfil = lerPerfil()
+  if (!perfil) return null
+
+  const primeiro = perfil.nome.split(' ')[0] || 'você'
+
+  const msgs: Record<string, string> = {
+    dividas_1_2:
+      `TC 🤝\n\nOlá, ${primeiro}!\n\nVocê me disse que tem dívidas para organizar.\n\nVamos começar por elas.\n\nMe diga qual é sua maior dívida atualmente.\n\nExemplo:\n"Devo R$ 3.000 no Nubank"\n\nPode escrever como se estivesse conversando com um amigo.`,
+
+    dividas_3_5:
+      `TC 🤝\n\nOlá, ${primeiro}!\n\nVocê me disse que tem algumas dívidas para organizar.\n\nVamos listar elas juntos.\n\nMe conta a primeira que vier na sua cabeça.\n\nExemplo:\n"Devo R$ 1.500 no cartão do Itaú"\n\nPode ir à vontade — sem julgamento aqui.`,
+
+    dividas_mais_5:
+      `TC 🤝\n\nOlá, ${primeiro}!\n\nEntendo que são várias dívidas — e tudo bem, vamos resolver uma de cada vez.\n\nComece me dizendo qual é a que mais te pesa agora.\n\nExemplo:\n"Devo R$ 5.000 no banco"\n\nDe uma em uma, a gente chega lá.`,
+
+    guardar_reserva_emergencia:
+      `TC 🤝\n\nOlá, ${primeiro}!\n\nVocê quer criar uma reserva de emergência — ótima escolha.\n\nPra montar um plano, preciso entender sua situação atual.\n\nQuanto você ganha por mês, aproximadamente?`,
+
+    guardar_moto:
+      `TC 🤝\n\nOlá, ${primeiro}!\n\nVocê quer guardar dinheiro para sua moto.\n\nVou te ajudar a chegar lá.\n\nPrimeiro preciso entender sua situação atual.\n\nQuanto você ganha por mês, aproximadamente?`,
+
+    guardar_carro:
+      `TC 🤝\n\nOlá, ${primeiro}!\n\nVocê quer guardar dinheiro para seu carro.\n\nVou te ajudar a chegar lá.\n\nPrimeiro preciso entender sua situação atual.\n\nQuanto você ganha por mês, aproximadamente?`,
+
+    guardar_casa:
+      `TC 🤝\n\nOlá, ${primeiro}!\n\nVocê quer guardar dinheiro para sua casa.\n\nGrande objetivo — vamos trabalhar nisso.\n\nPrimeiro preciso entender sua situação atual.\n\nQuanto você ganha por mês, aproximadamente?`,
+
+    guardar_viagem:
+      `TC 🤝\n\nOlá, ${primeiro}!\n\nVocê quer guardar dinheiro para uma viagem.\n\nVou te ajudar a chegar lá.\n\nPrimeiro preciso entender sua situação atual.\n\nQuanto você ganha por mês, aproximadamente?`,
+
+    guardar_outro:
+      `TC 🤝\n\nOlá, ${primeiro}!\n\nVocê tem um objetivo em mente — vamos juntos conquistá-lo.\n\nPara montar um plano, preciso entender sua situação atual.\n\nQuanto você ganha por mês, aproximadamente?`,
+
+    nao_sei_gastos:
+      `TC 🤝\n\nOlá, ${primeiro}!\n\nVocê quer entender para onde vai seu dinheiro.\n\nO primeiro passo é simples: registrar os gastos do dia a dia.\n\nMe conta um gasto de hoje — pode ser qualquer coisa.\n\nExemplo:\n"Almoço 18 reais"\n\nA partir daí, a gente vai enxergando o quadro completo.`,
+
+    renda_variavel:
+      `TC 🤝\n\nOlá, ${primeiro}!\n\nVocê tem renda variável — isso exige um controle um pouco diferente.\n\nO segredo é registrar tudo que entra e sai, mesmo nos meses difíceis.\n\nMe conta: esse mês você já recebeu alguma coisa?\n\nExemplo:\n"Recebi R$ 2.000 de freela"\n\nVamos começar pelo que entrou.`,
+
+    comprar_algo:
+      `TC 🤝\n\nOlá, ${primeiro}!\n\nVocê quer comprar algo específico — e eu vou te ajudar a chegar lá.\n\nPra isso, precisamos primeiro entender como está seu dinheiro agora.\n\nMe conta um gasto recente para começarmos.\n\nExemplo:\n"Mercado 150 reais"\n\nDevagar a gente constrói o caminho até seu objetivo.`,
   }
 
-  const objetivo = localStorage.getItem('onboarding_objetivo') || ''
-  const renda = parseFloat(localStorage.getItem('onboarding_renda') || '0')
+  // Monta a chave de lookup: desafio + resposta complementar
+  const chave = `${perfil.desafio}_${perfil.respostaCompl}`
+  const msg = msgs[chave] ?? msgs[perfil.desafio] ?? msgs['nao_sei_gastos']
+
+  // Marca como exibida para não repetir
+  localStorage.setItem(KEY_BOAS_VINDAS_EXIBIDA, '1')
+
+  return msg
+}
+
+function gerarMsgInicial(): string {
+  // 1. Tenta mensagem de boas-vindas pós-onboarding (primeira vez)
+  const boasVindas = gerarMsgBoasVindas()
+  if (boasVindas) return boasVindas
+
+  // 2. Fallback: mensagem genérica para acessos posteriores
   const nome = localStorage.getItem('user_name') || ''
   const primeiro = nome.split(' ')[0]
-
   const saudacao = primeiro ? `Oi, ${primeiro}! 👋` : 'Olá! 👋'
-
-  const linhaObjetivo: Record<string, string> = {
-    organizar: 'Vamos organizar seus gastos juntos e descobrir para onde seu dinheiro está indo.',
-    dividas: 'Vamos traçar um plano para você sair das dívidas e respirar aliviado.',
-    economizar: 'Vamos te ajudar a juntar dinheiro todo mês com controle real dos seus gastos.',
-    investir: 'Vamos organizar suas finanças para você começar a investir em breve.',
-  }
-  const descObjetivo = linhaObjetivo[objetivo] || 'Estou aqui para te ajudar a controlar suas finanças.'
-
-  let sugestao = '\nComece registrando algo agora:'
-  if (renda > 0) {
-    const metaSugerida = Math.round(renda * 0.3 / 100) * 100
-    sugestao += `\n\n💡 Com renda de ~R$ ${renda.toLocaleString('pt-BR')}, uma boa meta é guardar R$ ${metaSugerida.toLocaleString('pt-BR')} por mês.`
-  }
-  sugestao += '\n\n"Almoço 25 reais"\n"Recebi 3000 de freela"\n"Devo 500 no Nubank"'
-
-  return `${saudacao}\n\n${descObjetivo}${sugestao}`
+  return `${saudacao}\n\nEstou aqui para te ajudar a controlar suas finanças.\n\nMe conta um gasto, receita ou dívida — pode escrever do jeito que quiser.\n\n"Almoço 25 reais"\n"Recebi 3000 de freela"\n"Devo 500 no Nubank"`
 }
 
 const MSG_INICIAL: Mensagem = {
