@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 import { supabase, type Gasto, type Divida, type Receita } from '@/lib/supabase'
 import { toast } from 'sonner'
 import type { User } from '@supabase/supabase-js'
+import { type Plano, PAYWALL_ATIVO, dentroDoLimite } from '@/lib/planos'
 
 interface AppContextType {
   gastos: Gasto[]
@@ -10,6 +11,7 @@ interface AppContextType {
   loading: boolean
   supabaseOk: boolean
   user: User | null
+  plano: Plano
   totalGastos: number
   totalReceitas: number
   totalDividas: number
@@ -29,11 +31,22 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | null>(null)
 
 export function AppProvider({ children, user }: { children: ReactNode; user: User | null }) {
-  const [gastos, setGastos] = useState<Gasto[]>([])
+  const [gastosRaw, setGastosRaw] = useState<Gasto[]>([])
   const [dividas, setDividas] = useState<Divida[]>([])
-  const [receitas, setReceitas] = useState<Receita[]>([])
+  const [receitasRaw, setReceitasRaw] = useState<Receita[]>([])
   const [loading, setLoading] = useState(true)
   const [supabaseOk, setSupabaseOk] = useState(false)
+
+  // Plano do usuário — lido do user_metadata; padrão free
+  const plano: Plano = (user?.user_metadata?.plano as Plano) || 'free'
+
+  // Aplica filtro de histórico conforme plano
+  const gastos = PAYWALL_ATIVO
+    ? gastosRaw.filter(g => dentroDoLimite(g.data, plano))
+    : gastosRaw
+  const receitas = PAYWALL_ATIVO
+    ? receitasRaw.filter(r => dentroDoLimite(r.data, plano))
+    : receitasRaw
 
   const totalGastos = gastos.reduce((s, g) => s + Number(g.valor), 0)
   const totalReceitas = receitas.filter(r => r.tipo === 'recebido').reduce((s, r) => s + Number(r.valor), 0)
@@ -51,9 +64,9 @@ export function AppProvider({ children, user }: { children: ReactNode; user: Use
       if (rGastos.error || rDividas.error || rReceitas.error) {
         setSupabaseOk(false)
       } else {
-        setGastos(rGastos.data || [])
+        setGastosRaw(rGastos.data || [])
         setDividas(rDividas.data || [])
-        setReceitas(rReceitas.data || [])
+        setReceitasRaw(rReceitas.data || [])
         setSupabaseOk(true)
       }
     } catch {
@@ -70,14 +83,14 @@ export function AppProvider({ children, user }: { children: ReactNode; user: Use
     const channel = supabase
       .channel('realtime-user-' + user.id)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gastos', filter: `user_id=eq.${user.id}` }, (payload) => {
-        setGastos(prev => {
+        setGastosRaw(prev => {
           if (prev.find(g => g.id === payload.new.id)) return prev
           toast('Gasto registrado pelo WhatsApp!', { icon: '💸' })
           return [payload.new as Gasto, ...prev]
         })
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'receitas', filter: `user_id=eq.${user.id}` }, (payload) => {
-        setReceitas(prev => {
+        setReceitasRaw(prev => {
           if (prev.find(r => r.id === payload.new.id)) return prev
           toast('Receita registrada pelo WhatsApp!', { icon: '💰' })
           return [payload.new as Receita, ...prev]
@@ -99,14 +112,14 @@ export function AppProvider({ children, user }: { children: ReactNode; user: Use
     if (!user) return
     const { data, error } = await supabase.from('gastos').insert([{ ...g, user_id: user.id }]).select().single()
     if (error) { toast.error('Erro ao salvar gasto'); return }
-    setGastos(prev => [data, ...prev])
+    setGastosRaw(prev => [data, ...prev])
     toast.success('Gasto registrado!')
   }
 
   const removerGasto = async (id: string) => {
     const { error } = await supabase.from('gastos').delete().eq('id', id)
     if (error) { toast.error('Erro ao remover'); return }
-    setGastos(prev => prev.filter(g => g.id !== id))
+    setGastosRaw(prev => prev.filter(g => g.id !== id))
     toast.success('Gasto removido')
   }
 
@@ -146,21 +159,21 @@ export function AppProvider({ children, user }: { children: ReactNode; user: Use
     if (!user) return
     const { data, error } = await supabase.from('receitas').insert([{ ...r, user_id: user.id }]).select().single()
     if (error) { toast.error('Erro ao salvar receita'); return }
-    setReceitas(prev => [data, ...prev])
+    setReceitasRaw(prev => [data, ...prev])
     toast.success('Receita registrada!')
   }
 
   const removerReceita = async (id: string) => {
     const { error } = await supabase.from('receitas').delete().eq('id', id)
     if (error) { toast.error('Erro ao remover'); return }
-    setReceitas(prev => prev.filter(r => r.id !== id))
+    setReceitasRaw(prev => prev.filter(r => r.id !== id))
     toast.success('Receita removida')
   }
 
   const marcarRecebido = async (id: string) => {
     const { error } = await supabase.from('receitas').update({ tipo: 'recebido' }).eq('id', id)
     if (error) { toast.error('Erro ao atualizar'); return }
-    setReceitas(prev => prev.map(r => r.id === id ? { ...r, tipo: 'recebido' } : r))
+    setReceitasRaw(prev => prev.map(r => r.id === id ? { ...r, tipo: 'recebido' } : r))
     toast.success('Receita marcada como recebida!')
   }
 
@@ -170,7 +183,7 @@ export function AppProvider({ children, user }: { children: ReactNode; user: Use
 
   return (
     <AppContext.Provider value={{
-      gastos, dividas, receitas, loading, supabaseOk, user,
+      gastos, dividas, receitas, loading, supabaseOk, user, plano,
       totalGastos, totalReceitas, totalDividas,
       adicionarGasto, removerGasto,
       adicionarDivida, removerDivida, pagarDivida, atualizarDivida,

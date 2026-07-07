@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { MessageSquare, Receipt, CreditCard, TrendingUp, BarChart2, X, Target, Share2, Download, Trash2, ChevronRight, CheckCircle, MessageCircle, Pencil, Check, LogOut } from 'lucide-react'
 import { AppProvider, useApp } from '@/context/AppContext'
+import PaywallModal from '@/components/PaywallModal'
+import { podeUsar } from '@/lib/planos'
 import ChatPage from '@/pages/ChatPage'
 import GastosPage from '@/pages/GastosPage'
 import DividasPage from '@/pages/DividasPage'
@@ -91,12 +93,13 @@ function SideMenu({
   nomeUsuario: string
   onRenomear: (nome: string) => void
 }) {
-  const { gastos, receitas, dividas, logout } = useApp()
+  const { gastos, receitas, dividas, logout, plano } = useApp()
   const [showWhatsApp, setShowWhatsApp] = useState(false)
   const [showMeta, setShowMeta] = useState(false)
   const [confirmLimpar, setConfirmLimpar] = useState(false)
   const [editandoNome, setEditandoNome] = useState(false)
   const [novoNome, setNovoNome] = useState(nomeUsuario)
+  const [paywall, setPaywall] = useState<'historico' | 'whatsapp' | 'exportar' | 'meta' | null>(null)
 
   const waConnected = !!localStorage.getItem('wa_phone')
   const waPhone = localStorage.getItem('wa_phone') ?? ''
@@ -123,6 +126,7 @@ function SideMenu({
   }
 
   const handleExportar = async () => {
+    if (!podeUsar('exportar', plano)) { setPaywall('exportar'); return }
     const linhas = [
       '=== RESUMO TÁ CONTADO ===',
       `Exportado em: ${new Date().toLocaleDateString('pt-BR')}`,
@@ -260,8 +264,9 @@ function SideMenu({
               ? `R$ ${parseFloat(localStorage.getItem('meta_mensal')!).toLocaleString('pt-BR', { minimumFractionDigits: 0 })} / mês`
               : 'Definir limite de gastos'
             }
-            onClick={() => setShowMeta(v => !v)}
+            onClick={() => podeUsar('metaMensal', plano) ? setShowMeta(v => !v) : setPaywall('meta')}
             active={showMeta}
+            locked={!podeUsar('metaMensal', plano)}
           />
           {showMeta && <MetaMensal onClose={() => setShowMeta(false)} />}
           <MenuItem
@@ -304,7 +309,7 @@ function SideMenu({
             <button
               className="w-full py-2.5 rounded-xl font-semibold text-[13px] transition-colors text-primary-foreground active:scale-[0.98]"
               style={{ backgroundColor: waConnected ? 'oklch(0.30 0.06 240)' : 'oklch(0.55 0.18 162)' }}
-              onClick={() => setShowWhatsApp(true)}
+              onClick={() => podeUsar('whatsapp', plano) ? setShowWhatsApp(true) : setPaywall('whatsapp')}
             >
               {waConnected ? 'Gerenciar conexão' : 'Vincular meu WhatsApp'}
             </button>
@@ -376,14 +381,15 @@ function SideMenu({
           <p className="text-muted-foreground/30 text-[11px]">Tá Contado v1.0</p>
         </div>
       </div>
+      {paywall && <PaywallModal motivo={paywall} onFechar={() => setPaywall(null)} />}
     </>
   )
 }
 
 function MenuItem({
-  icon, label, desc, onClick, active = false,
+  icon, label, desc, onClick, active = false, locked = false,
 }: {
-  icon: React.ReactNode; label: string; desc: string; onClick: () => void; active?: boolean
+  icon: React.ReactNode; label: string; desc: string; onClick: () => void; active?: boolean; locked?: boolean
 }) {
   return (
     <button
@@ -401,7 +407,10 @@ function MenuItem({
         <p className="text-foreground font-semibold text-[13px] leading-tight">{label}</p>
         <p className="text-muted-foreground text-[11px] mt-0.5 truncate">{desc}</p>
       </div>
-      <ChevronRight size={14} className="text-muted-foreground/30 shrink-0" />
+      {locked
+        ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: 'oklch(0.55 0.18 162 / 20%)', color: 'oklch(0.65 0.18 162)' }}>PRO</span>
+        : <ChevronRight size={14} className="text-muted-foreground/30 shrink-0" />
+      }
     </button>
   )
 }
