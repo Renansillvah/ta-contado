@@ -100,3 +100,11 @@ coverage/
 # Lasy internal
 .claude
 .lasy
+
+# Secrets - never commit
+.env
+.env.*
+!.env.example
+
+# Temp
+.lasy_tmp/
