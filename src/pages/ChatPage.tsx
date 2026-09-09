@@ -70,15 +70,31 @@ type IntencaoIA =
   | { acao: 'conversa'; resposta: string }
   | { acao: 'pedir_valor'; item: string }
 
+async function chamarIAPontSegura(system: string, user: string, opts?: { max_tokens?: number; temperature?: number }): Promise<string> {
+  const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-ai`
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+  if (!fnUrl || !anonKey) throw new Error('Supabase não configurado')
+
+  const res = await fetch(fnUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${anonKey}`,
+      apikey: anonKey,
+    },
+    body: JSON.stringify({ tipo: 'intencao', system, user, ...(opts || {}) }),
+  })
+  const data = await res.json()
+  if (!data.ok) throw new Error(data.erro || 'Erro na IA')
+  return data.conteudo
+}
+
 async function processarComIA(
   texto: string,
   totalGastos: number,
   totalReceitas: number,
   totalDividas: number
 ): Promise<IntencaoIA> {
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY
-  if (!apiKey) throw new Error('VITE_OPENAI_API_KEY não configurada')
-
   const hoje = new Date().toLocaleDateString('pt-BR')
   const saldo = totalReceitas - totalGastos
 
@@ -161,28 +177,8 @@ Exemplos completos:
 
 IMPORTANTE: Retorne SOMENTE o JSON, sem texto adicional, sem markdown.`
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: texto },
-      ],
-      max_tokens: 200,
-      temperature: 0.7,
-    }),
-  })
-
-  if (!response.ok) throw new Error(`OpenAI error: ${response.status}`)
-
-  const data = await response.json()
-  const raw = data.choices?.[0]?.message?.content?.trim() ?? '{}'
-  return JSON.parse(raw) as IntencaoIA
+  const raw = await chamarIAPontSegura(systemPrompt, texto, { max_tokens: 200, temperature: 0.7 })
+  return JSON.parse(raw || '{}') as IntencaoIA
 }
 
 function fmtValor(v: number): string {
@@ -270,9 +266,6 @@ async function gerarCumprimentoDiario(
   totalReceitas: number,
   totalDividas: number
 ): Promise<string> {
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY
-  if (!apiKey) return ''
-
   const hora = new Date().getHours()
   const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
   const primeiro = nome.split(' ')[0] || ''
@@ -297,20 +290,11 @@ Gere uma mensagem de boas-vindas para o primeiro acesso do dia. Regras:
 - Termine com algo que convide o usuário a registrar algo ou checar o resumo
 - Varie sempre, nunca use frases genéricas`
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 120,
-      temperature: 0.9,
-    }),
-  })
-
-  if (!response.ok) return ''
-  const data = await response.json()
-  return data.choices?.[0]?.message?.content?.trim() ?? ''
+  try {
+    return await chamarIAPontSegura('', prompt, { max_tokens: 120, temperature: 0.9 })
+  } catch {
+    return ''
+  }
 }
 
 const CHIPS_INICIAIS = [

@@ -1,3 +1,23 @@
+// Ponte segura para a IA — o navegador nunca tem a chave da OpenAI.
+async function chamarIAPontSegura(user: string, opts?: { max_tokens?: number; temperature?: number }): Promise<string> {
+  const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-ai`
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+  if (!fnUrl || !anonKey) throw new Error('Supabase não configurado')
+
+  const res = await fetch(fnUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${anonKey}`,
+      apikey: anonKey,
+    },
+    body: JSON.stringify({ tipo: 'boas_vindas', user, ...(opts || {}) }),
+  })
+  const data = await res.json()
+  if (!data.ok) throw new Error(data.erro || 'Erro na IA')
+  return data.conteudo
+}
+
 interface PerfilUsuario {
   nome: string
   objetivo: string
@@ -19,9 +39,6 @@ const LABELS_CONTROLE: Record<string, string> = {
 }
 
 export async function gerarBoasVindasIA(perfil: PerfilUsuario): Promise<string> {
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY
-  if (!apiKey) throw new Error('VITE_OPENAI_API_KEY não configurada')
-
   const objetivo = LABELS_OBJETIVO[perfil.objetivo] || perfil.objetivo
   const controle = LABELS_CONTROLE[perfil.controle] || perfil.controle
   const rendaFmt = perfil.renda > 0
@@ -54,24 +71,5 @@ Regras:
 - NÃO use markdown (sem **, sem #, sem listas com -)
 - Termine com uma pergunta ou chamada para ação concreta`
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 300,
-      temperature: 0.8,
-    }),
-  })
-
-  if (!response.ok) {
-    throw new Error(`OpenAI error: ${response.status}`)
-  }
-
-  const data = await response.json()
-  return data.choices?.[0]?.message?.content?.trim() ?? ''
+  return await chamarIAPontSegura(prompt, { max_tokens: 300, temperature: 0.8 })
 }
