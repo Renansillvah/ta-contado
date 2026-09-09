@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { CheckCircle, XCircle, Loader2, Database, Play, RefreshCw } from 'lucide-react'
 
 const URL = import.meta.env.VITE_SUPABASE_URL as string
@@ -34,38 +34,6 @@ async function execSQL(sql: string): Promise<{ ok: boolean; error?: string }> {
   if (ignorable.some(s => err.includes(s))) return { ok: true }
 
   return { ok: false, error: err.substring(0, 200) }
-}
-
-// Cria a função exec_migration via bootstrap
-async function bootstrapExecFunction(): Promise<boolean> {
-  // Usa o endpoint de supabase que aceita DDL via service_role
-  // PostgREST v12+ permite chamar funções com parâmetros nomeados
-  const createFn = `
-    CREATE OR REPLACE FUNCTION public.exec_migration(query text)
-    RETURNS json LANGUAGE plpgsql SECURITY DEFINER AS $$
-    DECLARE result json;
-    BEGIN
-      EXECUTE query;
-      RETURN json_build_object('ok', true);
-    EXCEPTION WHEN OTHERS THEN
-      RETURN json_build_object('ok', false, 'error', SQLERRM, 'detail', SQLSTATE);
-    END;
-    $$;
-  `
-
-  // Tenta criar via endpoint de extensions (não funciona em todos os casos)
-  // Usa o endpoint alternativo: POST /rest/v1/rpc/pg_execute
-  const r = await fetch(`${URL}/rest/v1/rpc/pg_execute`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': SRV,
-      'Authorization': `Bearer ${SRV}`,
-    },
-    body: JSON.stringify({ sql: createFn }),
-  })
-
-  return r.ok
 }
 
 type StmtResult = { label: string; ok: boolean; skipped?: boolean; error?: string }
@@ -388,20 +356,8 @@ export default function RunMigration() {
   const [status, setStatus] = useState<'idle' | 'bootstrapping' | 'running' | 'done'>('idle')
   const [results, setResults] = useState<StmtResult[]>([])
   const [current, setCurrent] = useState(0)
-  const [bootstrapped, setBootstrapped] = useState(false)
 
   const total = MIGRATION_STEPS.length
-
-  // Verifica se exec_migration já existe
-  useEffect(() => {
-    fetch(`${URL}/rest/v1/rpc/exec_migration`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SRV, 'Authorization': `Bearer ${SRV}` },
-      body: JSON.stringify({ query: 'SELECT 1' }),
-    }).then(r => {
-      if (r.status !== 404) setBootstrapped(true)
-    })
-  }, [])
 
   const runMigration = async () => {
     setStatus('running')

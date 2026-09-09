@@ -526,7 +526,6 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
     const nome = (user.user_metadata?.full_name as string | undefined)
       || localStorage.getItem('user_name')
       || ''
-    const primeiro = nome.split(' ')[0] || 'você'
 
     // Calcula dados para os cards mais ricos (dia 3, 5, 7)
     const ontem = new Date()
@@ -586,7 +585,7 @@ export default function ChatPage({ inputInicial, onInputInicialUsado }: ChatPage
   // Lista de descrições genéricas que a IA costuma retornar quando o usuário não especifica o nome
   const DESCRICOES_GENERICAS = ['recebimento', 'recebimentos', 'parcela', 'parcelas', 'valor', 'pagamento', 'entrada']
 
-  const registrarParcelado = async (descricao: string, valor_total: number, parcelas: number, comentario: string) => {
+  const registrarParcelado = async (descricao: string, valor_total: number, parcelas: number, _comentario: string) => {
     const valorParcela = valor_total / parcelas
     const hoje2 = new Date()
     for (let i = 0; i < parcelas; i++) {

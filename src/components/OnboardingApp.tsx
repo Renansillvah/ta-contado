@@ -97,7 +97,7 @@ function getPergunta3(desafio: Desafio | null, nome: string): { titulo: string; 
   }
 }
 
-function getMensagemFinal(nome: string, desafio: Desafio | null, resposta: RespostaComplementar): string {
+function getMensagemFinal(_nome: string, desafio: Desafio | null, resposta: RespostaComplementar): string {
   if (desafio === 'dividas') {
     return `Agora vou te ajudar a organizar suas dívidas.`
   }

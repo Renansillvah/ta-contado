@@ -62,9 +62,8 @@ export default function AuthPage({ onAutenticado }: Props) {
   const [nome, setNome] = useState('')
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
-  const [sucesso, setSucesso] = useState('')
 
-  const limpar = () => { setErro(''); setSucesso('') }
+  const limpar = () => { setErro('') }
 
   const irPara = (t: Tela) => { setTela(t); limpar() }
 
