@@ -308,8 +308,7 @@ CREATE POLICY "ai_usage_select_own" ON ai_usage FOR SELECT
 CREATE POLICY "ai_usage_insert_own" ON ai_usage FOR INSERT
   TO authenticated WITH CHECK (auth.uid() = user_id);
 
-CREATE INDEX IF NOT EXISTS ai_usage_user_month_idx ON ai_usage(user_id, date_trunc('month', created_at));
-CREATE INDEX IF NOT EXISTS ai_usage_created_idx    ON ai_usage(created_at DESC);
+CREATE INDEX IF NOT EXISTS ai_usage_user_created_idx ON ai_usage(user_id, created_at DESC);
 
 -- =============================================================================
 -- 8. EVENTOS / MÉTRICAS
